@@ -44,9 +44,7 @@ class Shift(nn.Module):
 
     def forward(self, x):
         r = torch.zeros_like(x).to(device)
-        #torch.nn.init.xavier_uniform_(r, gain=1.0)
         r = r[:, :self.shift]
-
         p = x[:, self.shift:]
 
         return torch.cat((p, r), dim=1)
