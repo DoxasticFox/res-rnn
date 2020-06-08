@@ -36,7 +36,7 @@ class Shift(torch.nn.Module):
         return x
 
 class Res(torch.nn.Module):
-    def __init__(self, width, identity_proportion=0.9):
+    def __init__(self, width, identity_proportion):
         super(Res, self).__init__()
 
         self.identity_proportion = identity_proportion
@@ -54,7 +54,7 @@ class Res(torch.nn.Module):
         r = x
         x = self.fc1(x).abs()
         x = \
-            r                              * self.identity_proportion + \
+            self.identity_proportion       * r + \
             (1 - self.identity_proportion) * self.fc2(x)
         return x
 
@@ -95,11 +95,12 @@ class ShiftedResNet(torch.nn.Module):
         return x
 
 class ResRnn(torch.nn.Module):
-    def __init__(self, input_size, state_size, output_size):
+    def __init__(self, input_size, state_size, output_size, identity_proportion=0.97):
         super(ResRnn, self).__init__()
 
         self.output_size = output_size
         self.stream_size = input_size + state_size
+        self.identity_proportion = identity_proportion
 
         assert(output_size <= self.stream_size)
 
@@ -109,7 +110,7 @@ class ResRnn(torch.nn.Module):
         )
 
         self.shf = Shift()
-        self.res = Res(self.stream_size)
+        self.res = Res(self.stream_size, self.identity_proportion)
 
     def forward(self, input):
         # input:         (seq_size, batch_size, input_size)
