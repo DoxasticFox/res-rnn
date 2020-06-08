@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
+
 import torch
-import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
+from nnmodules import *
 
 # Check Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -9,7 +11,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Define Hyper-parameters
 input_size = 784
 hidden_size = 1000
-num_classes = 10
+output_width = 10
 num_epochs = 10000
 batch_size = 100
 
@@ -36,63 +38,7 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                           pin_memory=True,
                                           num_workers=4)
 
-class Shift(nn.Module):
-    def __init__(self, shift):
-        super(Shift, self).__init__()
-
-        self.shift = shift
-        self.register_buffer('padding', torch.zeros((shift,)))
-
-    def forward(self, x):
-        p = self.padding.view(1, -1)
-        p = p.expand((x.size(0), -1))
-
-        x = torch.cat((x, p), dim=1)
-        x = x[:, self.shift:]
-        return x
-
-# Fully connected neural network
-class Res(nn.Module):
-    def __init__(self, width):
-        super(Res, self).__init__()
-        self.fc1  = nn.Linear(width, width)
-        self.fc2  = nn.Linear(width, width)
-
-        self.shift = Shift(40)
-
-        torch.nn.init.xavier_uniform_(self.fc1.weight,  gain=1.0)
-        torch.nn.init.xavier_uniform_(self.fc2.weight,  gain=1.0)
-
-    def forward(self, x):
-        linearity = 0.97
-        r = x
-        x = self.fc1(x).abs()
-        x = r * linearity  + self.fc2(x) * (1 - linearity)
-        x = self.shift(x)
-        return x
-
-# Fully connected neural network
-class NeuralNet(nn.Module):
-    def __init__(self, input_size, hidden_size, num_classes):
-        super(NeuralNet, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.res = nn.ModuleList(Res(hidden_size) for _ in range(50))
-        self.fc2 = nn.Linear(hidden_size, num_classes)
-
-        torch.nn.init.xavier_uniform_(self.fc1.weight, gain=1.0)
-        torch.nn.init.xavier_uniform_(self.fc2.weight, gain=1.0)
-
-    def forward(self, x):
-        x = self.fc1(x)
-
-        for r in self.res:
-            x = r(x)
-
-        x = self.fc2(x)
-
-        return x
-
-model = NeuralNet(input_size, hidden_size, num_classes).to(device)
+model = ShiftedResNet(input_size, hidden_size, output_width).to(device)
 for p in model.parameters():
     p.register_hook(lambda grad: torch.clamp(grad, -0.01, 0.01))
 

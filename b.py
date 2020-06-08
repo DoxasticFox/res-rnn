@@ -2,13 +2,14 @@ import torch
 import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
+from nnmodules import *
 
 # Check Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define Hyper-parameters
 input_size = 784
-state_size = 12000
+state_size = 1000
 output_size = 10
 num_epochs = 10000
 batch_size = 100
@@ -35,23 +36,6 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                           shuffle=False,
                                           pin_memory=True,
                                           num_workers=4)
-
-# Fully connected neural network
-class Res(nn.Module):
-    def __init__(self, width):
-        super(Res, self).__init__()
-        self.fc1  = nn.Linear(width, width)
-        self.fc2  = nn.Linear(width, width)
-
-        torch.nn.init.xavier_uniform_(self.fc1.weight,  gain=1.0)
-        torch.nn.init.xavier_uniform_(self.fc2.weight,  gain=1.0)
-
-    def forward(self, x):
-        linearity = 0.9
-        r = x
-        x = self.fc1(x).abs()
-        x = r * linearity  + self.fc2(x) * (1 - linearity)
-        return x
 
 class ResRNN(nn.Module):
     def __init__(self, input_size, state_size, output_size):
