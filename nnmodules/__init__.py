@@ -21,7 +21,7 @@ def _broadcast_but_last(x, y):
     if len(x.size()) > len(y.size()):
         return x, new
     else:
-        return new, x
+        return new, y
 
 class Shift(torch.nn.Module):
     def __init__(self):
