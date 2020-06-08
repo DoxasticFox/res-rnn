@@ -4,6 +4,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from nnmodules import *
+from loss import *
 
 # Check Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -42,23 +43,16 @@ model = ShiftedResNet(input_size, hidden_size, output_width).to(device)
 for p in model.parameters():
     p.register_hook(lambda grad: torch.clamp(grad, -0.01, 0.01))
 
-def square(x):
-    return \
-            torch.clamp(x ** 2, - 1/2, 1/2) + \
-            torch.max(torch.ones_like(x).to(device) / 2, - x) + \
-            torch.max(torch.ones_like(x).to(device) / 2, x) - \
-            1
+clipped_mse = ClippedMse()
 
 # Loss and optimizer
 def loss_fn(outputs, labels):
     one_hot = torch.zeros(labels.size(0), 10).to(device)
     one_hot[torch.arange(outputs.size(0)), labels] = 1
 
-    output = torch.mean(square(outputs - one_hot))
+    return clipped_mse(outputs, one_hot)
 
-    return output
-
-optimizer = torch.optim.SGD(model.parameters(), lr=0.5, momentum=0.9)
+optimizer = torch.optim.SGD(model.parameters(), lr=1.0, momentum=0.9)
 
 # Train the model
 total_step = len(train_loader)
