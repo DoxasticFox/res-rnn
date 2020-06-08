@@ -1,5 +1,28 @@
 import torch
 
+def _broadcast_but_last(x, y):
+    if len(x.size()) == len(y.size()):
+        return x, y
+
+    if len(x.size()) > len(y.size()):
+        bigger, smaller = x, y
+    else:
+        bigger, smaller = y, x
+
+    new = smaller.view(
+        (1,) * (len(bigger.size()) - len(smaller.size())) + \
+        smaller.size()
+    )
+    new = new.expand(
+        bigger.size()[:-len(smaller.size())] + \
+        smaller.size()
+    )
+
+    if len(x.size()) > len(y.size()):
+        return x, new
+    else:
+        return new, x
+
 class Shift(torch.nn.Module):
     def __init__(self):
         super(Shift, self).__init__()
@@ -7,16 +30,9 @@ class Shift(torch.nn.Module):
     def forward(self, x, s):
         x_original_width = x.size(-1)
 
-        num_missing_dims = len(x.size()) - len(s.size())
-        s = s.view((1,) * num_missing_dims + s.size())
-        s = s.expand(
-            x.size()[:num_missing_dims] +
-            s.size()[num_missing_dims:]
-        )
-
+        x, s = _broadcast_but_last(x, s)
         x = torch.cat((s, x), dim=-1)
         x = x[..., :x_original_width]
-
         return x
 
 class Res(torch.nn.Module):
@@ -74,3 +90,39 @@ class ShiftedResNet(torch.nn.Module):
         x = self.fc2(x)
 
         return x
+
+class ResRnn(torch.nn.Module):
+    def __init__(self, input_size, state_size, output_size):
+        super(ResRnn, self).__init__()
+
+        self.output_size = output_size
+
+        self.register_buffer(
+            'initial_output_stream',
+            torch.zeros((input_size + state_size,))
+        )
+
+        self.shf = Shift()
+        self.res = Res(input_size + state_size)
+
+    def forward(self, input):
+        # input:         (seq_size, batch_size, input_size)
+        # output_stream: (seq_size, batch_size, input_size + state_size)
+        # returns:       (batch_size, output_size)
+
+        output_stream = self.initial_output_stream
+        print('output_stream size:', output_stream.size())
+
+        for i in input:
+            print('i size:', i.size())
+            output_stream = self.shf(output_stream, i)
+            print('output_stream size:', output_stream.size())
+            output_stream = self.res(output_stream)
+            print('output_stream size:', output_stream.size())
+
+        # Truncate the output of the last RNN application. We take the last
+        # output elements instead of the first because we hypothesise that this
+        # will make learning long distance dependencies easier.
+        output_stream = output_stream[..., -self.output_size:]
+
+        return output_stream
