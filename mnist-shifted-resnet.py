@@ -41,13 +41,15 @@ class Shift(nn.Module):
         super(Shift, self).__init__()
 
         self.shift = shift
+        self.register_buffer('padding', torch.zeros((shift,)))
 
     def forward(self, x):
-        r = torch.zeros_like(x).to(device)
-        r = r[:, :self.shift]
-        p = x[:, self.shift:]
+        p = self.padding.view(1, -1)
+        p = p.expand((x.size(0), -1))
 
-        return torch.cat((p, r), dim=1)
+        x = torch.cat((x, p), dim=1)
+        x = x[:, self.shift:]
+        return x
 
 # Fully connected neural network
 class Res(nn.Module):
