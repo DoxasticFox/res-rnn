@@ -7,6 +7,13 @@ class Shift(torch.nn.Module):
     def forward(self, x, s):
         x_original_width = x.size(-1)
 
+        num_missing_dims = len(x.size()) - len(s.size())
+        s = s.view((1,) * num_missing_dims + s.size())
+        s = s.expand(
+            x.size()[:num_missing_dims] +
+            s.size()[num_missing_dims:]
+        )
+
         x = torch.cat((s, x), dim=-1)
         x = x[..., :x_original_width]
 
@@ -61,19 +68,9 @@ class ShiftedResNet(torch.nn.Module):
         x = self.fc1(x)
 
         for s, r in zip(self.shf, self.res):
-            x = s(x, self._shift_input_for(x, 25))
+            x = s(x, self.zero.expand((25,)))
             x = r(x)
 
         x = self.fc2(x)
 
         return x
-
-    def _shift_input_for(self, x, width):
-        s = self.zero
-
-        # Modify the shape of `s` to be the same as the shape of `x`, except in
-        # the last dimension, which will be `width`.
-        s = s.view([1] * len(x.size()))
-        s = s.expand(x.size()[:-1] + (width,))
-
-        return s
