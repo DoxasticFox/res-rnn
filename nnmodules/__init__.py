@@ -44,8 +44,11 @@ class Res(torch.nn.Module):
         self.fc1  = torch.nn.Linear(width, width)
         self.fc2  = torch.nn.Linear(width, width)
 
-        torch.nn.init.xavier_uniform_(self.fc1.weight,  gain=1.0)
-        torch.nn.init.xavier_uniform_(self.fc2.weight,  gain=1.0)
+        torch.nn.init.xavier_uniform_(self.fc1.weight, gain=1.0)
+        torch.nn.init.xavier_uniform_(self.fc2.weight, gain=1.0)
+
+        torch.nn.init.zeros_(self.fc1.bias)
+        torch.nn.init.zeros_(self.fc2.bias)
 
     def forward(self, x):
         r = x
@@ -96,14 +99,17 @@ class ResRnn(torch.nn.Module):
         super(ResRnn, self).__init__()
 
         self.output_size = output_size
+        self.stream_size = input_size + state_size
+
+        assert(output_size <= self.stream_size)
 
         self.register_buffer(
             'initial_output_stream',
-            torch.zeros((input_size + state_size,))
+            torch.zeros((self.stream_size,))
         )
 
         self.shf = Shift()
-        self.res = Res(input_size + state_size)
+        self.res = Res(self.stream_size)
 
     def forward(self, input):
         # input:         (seq_size, batch_size, input_size)
@@ -111,14 +117,10 @@ class ResRnn(torch.nn.Module):
         # returns:       (batch_size, output_size)
 
         output_stream = self.initial_output_stream
-        print('output_stream size:', output_stream.size())
 
         for i in input:
-            print('i size:', i.size())
             output_stream = self.shf(output_stream, i)
-            print('output_stream size:', output_stream.size())
             output_stream = self.res(output_stream)
-            print('output_stream size:', output_stream.size())
 
         # Truncate the output of the last RNN application. We take the last
         # output elements instead of the first because we hypothesise that this
