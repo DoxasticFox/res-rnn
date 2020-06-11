@@ -11,7 +11,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define Hyper-parameters
 input_size = 784
-hidden_size = 1000
+hidden_size = 1350
 output_width = 10
 num_epochs = 10000
 batch_size = 100
@@ -43,16 +43,16 @@ model = ShiftedResNet(input_size, hidden_size, output_width).to(device)
 for p in model.parameters():
     p.register_hook(lambda grad: torch.clamp(grad, -0.01, 0.01))
 
-clipped_mse = ClippedMse()
+smooth_l1_loss = torch.nn.SmoothL1Loss().to(device)
 
 # Loss and optimizer
 def loss_fn(outputs, labels):
     one_hot = torch.zeros(labels.size(0), 10).to(device)
     one_hot[torch.arange(outputs.size(0)), labels] = 1
 
-    return clipped_mse(outputs, one_hot)
+    return smooth_l1_loss(outputs, one_hot)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=1.0, momentum=0.9)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
 
 # Train the model
 total_step = len(train_loader)

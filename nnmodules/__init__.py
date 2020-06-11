@@ -23,6 +23,16 @@ def _broadcast_but_last(x, y):
     else:
         return new, y
 
+class Affine(torch.nn.Module):
+    def __init__(self, width):
+        super(Affine, self).__init__()
+
+        self.w = torch.nn.Parameter(torch.ones(width))
+        self.b = torch.nn.Parameter(torch.zeros(width))
+
+    def forward(self, x):
+        return self.w * x + self.b
+
 class Shift(torch.nn.Module):
     def __init__(self):
         super(Shift, self).__init__()
@@ -33,7 +43,39 @@ class Shift(torch.nn.Module):
         x, s = _broadcast_but_last(x, s)
         x = torch.cat((s, x), dim=-1)
         x = x[..., :x_original_width]
+
         return x
+
+class Overwrite(torch.nn.Module):
+    def __init__(self):
+        super(Overwrite, self).__init__()
+
+    def forward(self, x, o):
+        o_original_width = o.size(-1)
+
+        x, o = _broadcast_but_last(x, o)
+        x = torch.cat((o, x[..., o_original_width:]), dim=-1)
+
+        return x
+
+
+class BatchNorm(torch.nn.Module):
+    def __init__(self, width):
+        super(BatchNorm, self).__init__()
+
+        self.smooth_l1_loss = torch.nn.SmoothL1Loss()
+
+        self.register_buffer('zeros', torch.zeros(width))
+        self.register_buffer('ones', torch.ones(width))
+
+    def forward(self, x):
+        assert(len(x.size()) == 2)
+
+        mean_reg = self.smooth_l1_loss(x.mean(0), self.zeros)
+        var_reg  = self.smooth_l1_loss(x.var(0), self.ones)
+        reg = mean_reg + var_reg
+
+        return x, reg
 
 class Res(torch.nn.Module):
     def __init__(self, width, identity_proportion):
@@ -41,6 +83,7 @@ class Res(torch.nn.Module):
 
         self.identity_proportion = identity_proportion
 
+        self.bn   = BatchNorm(width)
         self.fc1  = torch.nn.Linear(width, width)
         self.fc2  = torch.nn.Linear(width, width)
 
@@ -52,33 +95,38 @@ class Res(torch.nn.Module):
 
     def forward(self, x):
         r = x
-        x = self.fc1(x).abs()
-        x = \
-            self.identity_proportion       * r + \
-            (1 - self.identity_proportion) * self.fc2(x)
-        return x
+
+        x, bn_reg = self.bn(x)
+
+        x = self.fc1(x)
+        x = x.abs()
+        x = self.fc2(x)
+
+        x = self.identity_proportion * r + (1 - self.identity_proportion) * x
+
+        return x, bn_reg
 
 class ShiftedResNet(torch.nn.Module):
     def __init__(
             self,
-            input_size,
-            hidden_size,
+            input_width,
+            hidden_width,
             output_width,
-            depth=50,
+            depth=100,
             identity_proportion=0.97
     ):
         super(ShiftedResNet, self).__init__()
 
         self.register_buffer('zero', torch.tensor([0.0]))
 
-        self.fc1 = torch.nn.Linear(input_size, hidden_size)
+        self.fc1 = torch.nn.Linear(input_width, hidden_width)
 
         self.shf = torch.nn.ModuleList(
             Shift() for _ in range(depth))
         self.res = torch.nn.ModuleList(
-            Res(hidden_size, identity_proportion) for _ in range(depth))
+            Res(hidden_width, identity_proportion) for _ in range(depth))
 
-        self.fc2 = torch.nn.Linear(hidden_size, output_width)
+        self.fc2 = torch.nn.Linear(hidden_width, output_width)
 
         torch.nn.init.xavier_uniform_(self.fc1.weight, gain=1.0)
         torch.nn.init.xavier_uniform_(self.fc2.weight, gain=1.0)
@@ -95,37 +143,49 @@ class ShiftedResNet(torch.nn.Module):
         return x
 
 class ResRnn(torch.nn.Module):
-    def __init__(self, input_size, state_size, output_size, identity_proportion=0.97):
+    def __init__(self, input_width, state_width, output_width, identity_proportion=0.97):
         super(ResRnn, self).__init__()
 
-        self.output_size = output_size
-        self.stream_size = input_size + state_size
+        self.input_width = input_width
+        self.output_width = output_width
+        self.stream_width = input_width + state_width
         self.identity_proportion = identity_proportion
 
-        assert(output_size <= self.stream_size)
+        assert(output_width <= self.stream_width)
 
-        self.register_buffer(
-            'initial_output_stream',
-            torch.zeros((self.stream_size,))
-        )
-
-        self.shf = Shift()
-        self.res = Res(self.stream_size, self.identity_proportion)
+        self.ow = Overwrite()
+        self.aff = Affine(self.stream_width)
+        self.res = Res(self.stream_width, self.identity_proportion)
 
     def forward(self, input):
-        # input:         (seq_size, batch_size, input_size)
-        # output_stream: (seq_size, batch_size, input_size + state_size)
-        # returns:       (batch_size, output_size)
+        # input:         (seq_width, batch_width, input_width)
+        # output_stream: (seq_width, batch_width, input_width + state_width)
+        # returns:       (batch_width, output_width)
 
-        output_stream = self.initial_output_stream
+        assert(len(input.size()) == 3)
+        assert(input.size(-1) == self.input_width)
 
-        for i in input:
-            output_stream = self.shf(output_stream, i)
-            output_stream = self.res(output_stream)
+        with torch.no_grad():
+            output_stream = torch.normal(
+                0.0,
+                1.0,
+                size=(input.size(1), self.stream_width)
+            ).to(input.device)
+
+        reg_terms = []
+        for index, element in enumerate(input):
+            output_stream = self.ow(output_stream, element)
+            if index == 0:
+                output_stream = self.aff(output_stream)
+            output_stream, reg_term = self.res(output_stream)
+
+            reg_terms.append(reg_term)
 
         # Truncate the output of the last RNN application. We take the last
         # output elements instead of the first because we hypothesise that this
         # will make learning long distance dependencies easier.
-        output_stream = output_stream[..., -self.output_size:]
+        output_stream = output_stream[..., -self.output_width:]
 
-        return output_stream
+        reg = torch.stack(reg_terms).mean()
+
+        return output_stream, reg
