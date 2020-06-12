@@ -42,7 +42,7 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                           num_workers=4)
 
 model = nnmodules.ResRnn(
-    input_width=2,
+    input_width=1,
     state_width=state_size,
     output_width=output_size,
     identity_proportion=0.999
@@ -63,7 +63,7 @@ step_num = 0
 
 for epoch in range(num_epochs):
     for i, (images, labels) in enumerate(train_loader):
-        images = images.reshape(-1, 392, 2).expand(-1, -1, -1).permute(1, 0, 2).to(device)
+        images = images.reshape(-1, 28 * 28, 1).expand(-1, -1, -1).permute(1, 0, 2).to(device)
         labels = labels.to(device)
 
         # Forward pass
@@ -98,7 +98,7 @@ for epoch in range(num_epochs):
                 correct = 0
                 total = 0
                 for images_, labels_ in test_loader:
-                    images_ = images_.reshape(-1, 392, 2).expand(-1, -1, -1).permute(1, 0, 2).to(device)
+                    images_ = images_.reshape(-1, 28 * 28, 1).expand(-1, -1, -1).permute(1, 0, 2).to(device)
                     labels_ = labels_.to(device)
                     outputs = model(images_)
                     _, predicted = torch.max(outputs.data, 1)
