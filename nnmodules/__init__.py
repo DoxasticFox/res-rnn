@@ -23,16 +23,6 @@ def _broadcast_but_last(x, y):
     else:
         return new, y
 
-class Affine(torch.nn.Module):
-    def __init__(self, width):
-        super(Affine, self).__init__()
-
-        self.w = torch.nn.Parameter(torch.ones(width))
-        self.b = torch.nn.Parameter(torch.zeros(width))
-
-    def forward(self, x):
-        return self.w * x + self.b
-
 class Shift(torch.nn.Module):
     def __init__(self):
         super(Shift, self).__init__()
@@ -58,32 +48,12 @@ class Overwrite(torch.nn.Module):
 
         return x
 
-
-class BatchNorm(torch.nn.Module):
-    def __init__(self, width):
-        super(BatchNorm, self).__init__()
-
-        self.smooth_l1_loss = torch.nn.SmoothL1Loss()
-
-        self.register_buffer('zeros', torch.zeros(width))
-        self.register_buffer('ones', torch.ones(width))
-
-    def forward(self, x):
-        assert(len(x.size()) == 2)
-
-        mean_reg = self.smooth_l1_loss(x.mean(0), self.zeros)
-        var_reg  = self.smooth_l1_loss(x.var(0), self.ones)
-        reg = mean_reg + var_reg
-
-        return x, reg
-
 class Res(torch.nn.Module):
     def __init__(self, width, identity_proportion):
         super(Res, self).__init__()
 
         self.identity_proportion = identity_proportion
 
-        self.bn   = BatchNorm(width)
         self.fc1  = torch.nn.Linear(width, width)
         self.fc2  = torch.nn.Linear(width, width)
 
@@ -96,15 +66,13 @@ class Res(torch.nn.Module):
     def forward(self, x):
         r = x
 
-        x, bn_reg = self.bn(x)
-
         x = self.fc1(x)
         x = x.abs()
         x = self.fc2(x)
 
         x = self.identity_proportion * r + (1 - self.identity_proportion) * x
 
-        return x, bn_reg
+        return x
 
 class ShiftedResNet(torch.nn.Module):
     def __init__(
@@ -153,8 +121,7 @@ class ResRnn(torch.nn.Module):
 
         assert(output_width <= self.stream_width)
 
-        self.ow = Overwrite()
-        self.aff = Affine(self.stream_width)
+        self.ins = Shift()
         self.res = Res(self.stream_width, self.identity_proportion)
 
     def forward(self, input):
@@ -166,26 +133,18 @@ class ResRnn(torch.nn.Module):
         assert(input.size(-1) == self.input_width)
 
         with torch.no_grad():
-            output_stream = torch.normal(
-                0.0,
-                1.0,
-                size=(input.size(1), self.stream_width)
-            ).to(input.device)
+            output_stream = torch.zeros(
+                (input.size(1), self.stream_width),
+                device=input.device
+            )
 
-        reg_terms = []
         for index, element in enumerate(input):
-            output_stream = self.ow(output_stream, element)
-            if index == 0:
-                output_stream = self.aff(output_stream)
-            output_stream, reg_term = self.res(output_stream)
-
-            reg_terms.append(reg_term)
+            output_stream = self.ins(output_stream, element)
+            output_stream = self.res(output_stream)
 
         # Truncate the output of the last RNN application. We take the last
         # output elements instead of the first because we hypothesise that this
         # will make learning long distance dependencies easier.
         output_stream = output_stream[..., -self.output_width:]
 
-        reg = torch.stack(reg_terms).mean()
-
-        return output_stream, reg
+        return output_stream
