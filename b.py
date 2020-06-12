@@ -15,7 +15,7 @@ input_size = 784
 state_size = 256
 output_size = 10
 num_epochs = 10000
-train_batch_size = 1000
+train_batch_size = 1024
 test_batch_size = 100
 
 # MNIST dataset
@@ -63,7 +63,21 @@ step_num = 0
 
 for epoch in range(num_epochs):
     for i, (images, labels) in enumerate(train_loader):
-        images = images.reshape(-1, 28 * 28, 1).expand(-1, -1, -1).permute(1, 0, 2).to(device)
+        images = images \
+            .reshape(-1, 28 * 28, 1) \
+            .expand(-1, -1, -1) \
+            .permute(1, 0, 2)
+        images = torch.cat(
+            (
+                images,
+                torch.zeros(
+                    1000 - images.size(0),
+                    images.size(1),
+                    images.size(2)
+                )
+            ),
+            dim=0
+        ).to(device)
         labels = labels.to(device)
 
         # Forward pass
@@ -98,7 +112,21 @@ for epoch in range(num_epochs):
                 correct = 0
                 total = 0
                 for images_, labels_ in test_loader:
-                    images_ = images_.reshape(-1, 28 * 28, 1).expand(-1, -1, -1).permute(1, 0, 2).to(device)
+                    images_ = images_ \
+                        .reshape(-1, 28 * 28, 1) \
+                        .expand(-1, -1, -1) \
+                        .permute(1, 0, 2)
+                    images_ = torch.cat(
+                        (
+                            images_,
+                            torch.zeros(
+                                1000 - images_.size(0),
+                                images_.size(1),
+                                images_.size(2)
+                            )
+                        ),
+                        dim=0
+                    ).to(device)
                     labels_ = labels_.to(device)
                     outputs = model(images_)
                     _, predicted = torch.max(outputs.data, 1)
