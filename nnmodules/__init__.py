@@ -99,12 +99,18 @@ class ShiftedResNet(torch.nn.Module):
         return x
 
 class ResRnn(torch.nn.Module):
-    def __init__(self, input_width, state_width, output_width, linearity):
+    def __init__(
+        self,
+        input_width,
+        state_width,
+        output_width=None,
+        linearity=0.999
+    ):
         super(ResRnn, self).__init__()
 
         self.input_width = input_width
-        self.output_width = output_width
         self.stream_width = input_width + state_width
+        self.output_width = output_width or self.stream_width
         self.linearity = linearity
 
         assert(output_width <= self.stream_width)
@@ -114,24 +120,65 @@ class ResRnn(torch.nn.Module):
         self.ins = Shift()
         self.res = Res(self.stream_width, self.linearity)
 
-    def forward(self, input):
-        # input:         (seq_width, batch_width, input_width)
-        # output_stream: (seq_width, batch_width, input_width + state_width)
-        # returns:       (batch_width, output_width)
+    def forward(self, input, output_indices=None):
+        # input:
+        #     (seq_width, batch_width, input_width)
+        # output_stream:
+        #     (seq_width, batch_width, output_width)
+        # returns:
+        #      if output_indices == -1:
+        #          (batch_width, output_width)
+        #      elif output_indices == None:
+        #          (seq_length, batch_width, output_width)
+        #      elif output_indices is list-like:
+        #          (batch_width, output_width)
 
-        assert(len(input.size()) == 3)
-        assert(input.size(-1) == self.input_width)
+        seq_width, batch_width, input_width = input.size()
+
+        assert(input_width == self.input_width)
+        assert(
+            output_indices is None or
+            output_indices == -1 or
+            output_indices.size() == torch.Size((batch_width,))
+        )
+        assert(
+            type(output_indices) != torch.Tensor or
+            output_indices.min() >= 0)
+        assert(
+            type(output_indices) != torch.Tensor or
+            output_indices.max() < seq_width)
 
         output_stream = self.zero.expand(self.stream_width)
+        outputs = []
 
-        for index, element in enumerate(input):
+        for element in input:
             output_stream = self.ins(output_stream, element)
             output_stream = self.res(output_stream)
 
-        # Truncate the output of the last RNN application. We take the last
-        # output elements instead of the first because we hypothesise that this
-        # will make learning long distance dependencies easier.
-        output_stream = output_stream[..., -self.output_width:]
+            # Take outputs from the high indices because it might help with
+            # learning long distance dependencies.
+            output = output_stream[..., -self.output_width:]
 
+            outputs.append(output)
 
-        return output_stream
+        # Collect the outputs we want.
+        #   * Return the outputs from the last RNN application in every batch.
+        #     If the sequences do not have the same length, the shorter
+        #     sequences would have had the RNN applied to them a few extra times
+        #     needlessly.
+        if output_indices == -1:
+            return outputs[-1]
+
+        outputs = torch.stack(outputs)
+        #   * Return the outputs from every RNN application in every batch.
+        if output_indices is None:
+            return outputs
+        #   * Return the outputs from the last RNN application to each sequence
+        #     in the batch.
+        if type(output_indices) == torch.Tensor:
+            return outputs[output_indices, torch.range(batch_width)]
+
+        raise RuntimeError(
+            "output_indices has an unexpected type which wasn't properly "
+            "checked"
+        )

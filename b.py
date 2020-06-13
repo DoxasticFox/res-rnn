@@ -12,7 +12,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define Hyper-parameters
 input_size = 784
-state_size = 1024
+state_size = 196
 output_size = 10
 num_epochs = 10000
 train_batch_size = 100
@@ -71,7 +71,7 @@ for epoch in range(num_epochs):
         labels = labels.to(device)
 
         # Forward pass
-        outputs = model(images)
+        outputs = model(images, output_indices=-1)
         total_loss = loss_fn(outputs, labels)
 
         # Backprpagation and optimization
@@ -108,7 +108,7 @@ for epoch in range(num_epochs):
                         .permute(1, 0, 2) \
                         .to(device)
                     labels_ = labels_.to(device)
-                    outputs = model(images_)
+                    outputs = model(images_, output_indices=-1)
                     _, predicted = torch.max(outputs.data, 1)
                     total += labels_.size(0)
                     correct += (predicted == labels_).sum().item()
