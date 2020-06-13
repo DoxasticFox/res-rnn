@@ -12,7 +12,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define Hyper-parameters
 input_size = 784
-state_size = 196
+state_size = 256
 output_size = 10
 num_epochs = 10000
 train_batch_size = 100
@@ -45,7 +45,7 @@ model = nnmodules.ResRnn(
     input_width=1,
     state_width=state_size,
     output_width=output_size,
-    linearity=0.999
+    linearity=0.99999
 ).to(device)
 smooth_l1_loss = torch.nn.SmoothL1Loss().to(device)
 
@@ -55,7 +55,7 @@ def loss_fn(outputs, labels):
 
     return smooth_l1_loss(outputs, one_hot)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=100.0, momentum=0.9)
+optimizer = torch.optim.SGD(model.parameters(), lr=10000.00, momentum=0.9)
 
 # Train the model
 total_step = len(train_loader)

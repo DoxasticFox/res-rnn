@@ -104,7 +104,7 @@ class ResRnn(torch.nn.Module):
         input_width,
         state_width,
         output_width=None,
-        linearity=0.999
+        linearity=0.99999
     ):
         super(ResRnn, self).__init__()
 
@@ -115,7 +115,9 @@ class ResRnn(torch.nn.Module):
 
         assert(output_width <= self.stream_width)
 
-        self.register_buffer('zero', torch.tensor([0.0]))
+        self.initial_stream = torch.nn.Parameter(
+            torch.zeros(size=(self.stream_width,))
+        )
 
         self.ins = Shift()
         self.res = Res(self.stream_width, self.linearity)
@@ -148,7 +150,7 @@ class ResRnn(torch.nn.Module):
             type(output_indices) != torch.Tensor or
             output_indices.max() < seq_width)
 
-        output_stream = self.zero.expand(self.stream_width)
+        output_stream = (1 - self.linearity) * self.initial_stream
         outputs = []
 
         for element in input:
