@@ -12,10 +12,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define Hyper-parameters
 input_size = 784
-state_size = 256
+state_size = 1024
 output_size = 10
 num_epochs = 10000
-train_batch_size = 1024
+train_batch_size = 100
 test_batch_size = 100
 
 # MNIST dataset
@@ -45,7 +45,7 @@ model = nnmodules.ResRnn(
     input_width=1,
     state_width=state_size,
     output_width=output_size,
-    identity_proportion=0.999
+    linearity=0.999
 ).to(device)
 smooth_l1_loss = torch.nn.SmoothL1Loss().to(device)
 
@@ -66,18 +66,8 @@ for epoch in range(num_epochs):
         images = images \
             .reshape(-1, 28 * 28, 1) \
             .expand(-1, -1, -1) \
-            .permute(1, 0, 2)
-        images = torch.cat(
-            (
-                images,
-                torch.zeros(
-                    1000 - images.size(0),
-                    images.size(1),
-                    images.size(2)
-                )
-            ),
-            dim=0
-        ).to(device)
+            .permute(1, 0, 2) \
+            .to(device)
         labels = labels.to(device)
 
         # Forward pass
@@ -115,18 +105,8 @@ for epoch in range(num_epochs):
                     images_ = images_ \
                         .reshape(-1, 28 * 28, 1) \
                         .expand(-1, -1, -1) \
-                        .permute(1, 0, 2)
-                    images_ = torch.cat(
-                        (
-                            images_,
-                            torch.zeros(
-                                1000 - images_.size(0),
-                                images_.size(1),
-                                images_.size(2)
-                            )
-                        ),
-                        dim=0
-                    ).to(device)
+                        .permute(1, 0, 2) \
+                        .to(device)
                     labels_ = labels_.to(device)
                     outputs = model(images_)
                     _, predicted = torch.max(outputs.data, 1)
