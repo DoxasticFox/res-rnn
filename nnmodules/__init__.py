@@ -1,4 +1,5 @@
 import torch
+import itertools
 
 def _broadcast_but_last(x, y):
     if len(x.size()) == len(y.size()):
@@ -109,22 +110,36 @@ class ResRnn(torch.nn.Module):
         super(ResRnn, self).__init__()
 
         self.input_width = input_width
+        self.state_width = state_width
+        self.output_width = output_width
         self.stream_width = input_width + state_width
-        self.output_width = output_width or self.stream_width
         self.linearity = linearity
 
-        assert(output_width <= self.stream_width)
+        self.output_width = output_width or self.stream_width
+
+        assert(self.output_width <= self.stream_width)
+        assert(self.input_width >= 0)
+        assert(self.state_width >= 0)
+        assert(self.stream_width > 0)
 
         self.initial_stream = torch.nn.Parameter(
             torch.zeros(size=(self.stream_width,))
         )
+        self.do_terminate = None
 
         self.ins = Shift()
         self.res = Res(self.stream_width, self.linearity)
 
-    def forward(self, input, output_indices=None):
+    def forward(
+        self,
+        input,
+        output_indices=None,
+        termination_condition=None,
+        max_iterations=None
+    ):
         # input:
-        #     (seq_width, batch_width, input_width)
+        #     (seq_width, batch_width, input_width) or
+        #     (batch_width, state_width)
         # output_stream:
         #     (seq_width, batch_width, output_width)
         # returns:
@@ -135,7 +150,16 @@ class ResRnn(torch.nn.Module):
         #      elif output_indices is list-like:
         #          (batch_width, output_width)
 
-        seq_width, batch_width, input_width = input.size()
+        # Check inputs and unpack input size
+        seq_width, batch_width, input_width, state_width = 0, 0, 0, 0
+        try:
+            seq_width, batch_width, input_width = input.size()
+        except ValueError:
+            pass
+        try:
+            batch_width, state_width = input.size()
+        except ValueError:
+            pass
 
         assert(input_width == self.input_width)
         assert(
@@ -149,18 +173,45 @@ class ResRnn(torch.nn.Module):
         assert(
             type(output_indices) != torch.Tensor or
             output_indices.max() < seq_width)
+        assert(input_width > 0 or termination_condition is not None)
+        assert(termination_condition is None or max_iterations is not None)
 
-        output_stream = (1 - self.linearity) * self.initial_stream
+        # Apply RNN
+        if input_width == 0 and self.do_terminate is None:
+            self.do_terminate = torch.tensor(
+                [False] * batch_width,
+                device=input.device
+            )
+        if input_width == 0:
+            self.do_terminate = self.do_terminate.zero_()
+
         outputs = []
+        for index in itertools.count():
+            if input_width == 0 and index >= max_iterations:
+                break
+            if input_width == 0 and outputs:
+                self.do_terminate |= termination_condition(outputs[-1])
+            if input_width == 0 and self.do_terminate.all():
+                break
+            if index == input_width:
+                break
 
-        for element in input:
-            output_stream = self.ins(output_stream, element)
+            # Prepare first input to RNN
+            if index == 0 and input_width == 0:
+                output_stream = input[None, ...]
+            if index == 0 and input_width > 0:
+                output_stream = (1 - self.linearity) * self.initial_stream
+
+            # Insert the input into the stream
+            if input_width > 0:
+                output_stream = self.ins(output_stream, input[index])
+
+            # Perform a single ResRNN application
             output_stream = self.res(output_stream)
 
             # Take outputs from the high indices because it might help with
             # learning long distance dependencies.
             output = output_stream[..., -self.output_width:]
-
             outputs.append(output)
 
         # Collect the outputs we want.
@@ -170,7 +221,6 @@ class ResRnn(torch.nn.Module):
         #     needlessly.
         if output_indices == -1:
             return outputs[-1]
-
         outputs = torch.stack(outputs)
         #   * Return the outputs from every RNN application in every batch.
         if output_indices is None:
@@ -180,7 +230,4 @@ class ResRnn(torch.nn.Module):
         if type(output_indices) == torch.Tensor:
             return outputs[output_indices, torch.range(batch_width)]
 
-        raise RuntimeError(
-            "output_indices has an unexpected type which wasn't properly "
-            "checked"
-        )
+        raise RuntimeError('Failed to collect output')

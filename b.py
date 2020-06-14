@@ -42,7 +42,7 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                           num_workers=4)
 
 model = nnmodules.ResRnn(
-    input_width=1,
+    input_width=28,
     state_width=state_size,
     output_width=output_size,
     linearity=0.99999
@@ -64,7 +64,7 @@ step_num = 0
 for epoch in range(num_epochs):
     for i, (images, labels) in enumerate(train_loader):
         images = images \
-            .reshape(-1, 28 * 28, 1) \
+            .reshape(-1, 28, 28) \
             .expand(-1, -1, -1) \
             .permute(1, 0, 2) \
             .to(device)
@@ -103,7 +103,7 @@ for epoch in range(num_epochs):
                 total = 0
                 for images_, labels_ in test_loader:
                     images_ = images_ \
-                        .reshape(-1, 28 * 28, 1) \
+                        .reshape(-1, 28, 28) \
                         .expand(-1, -1, -1) \
                         .permute(1, 0, 2) \
                         .to(device)
