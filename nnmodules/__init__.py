@@ -123,7 +123,7 @@ class ResRnn(torch.nn.Module):
         assert(self.stream_width > 0)
 
         self.initial_stream = torch.nn.Parameter(
-            torch.zeros(size=(self.stream_width,))
+            torch.zeros(size=(self.stream_width,)),
         )
         self.do_terminate = None
 
@@ -134,7 +134,7 @@ class ResRnn(torch.nn.Module):
         self,
         input,
         output_indices=None,
-        termination_condition=None,
+        term_fun=None,
         max_iterations=None
     ):
         # input:
@@ -161,7 +161,7 @@ class ResRnn(torch.nn.Module):
         except ValueError:
             pass
 
-        assert(input_width == self.input_width)
+        assert(input_width == 0 or input_width == self.input_width)
         assert(
             output_indices is None or
             output_indices == -1 or
@@ -173,33 +173,36 @@ class ResRnn(torch.nn.Module):
         assert(
             type(output_indices) != torch.Tensor or
             output_indices.max() < seq_width)
-        assert(input_width > 0 or termination_condition is not None)
-        assert(termination_condition is None or max_iterations is not None)
+        assert(
+            input_width > 0 or
+            term_fun is not None or
+            max_iterations is not None
+        )
 
         # Apply RNN
-        if input_width == 0 and self.do_terminate is None:
+        if input_width == 0 and self.do_terminate is None and term_fun:
             self.do_terminate = torch.tensor(
                 [False] * batch_width,
                 device=input.device
             )
-        if input_width == 0:
+        if input_width == 0 and term_fun:
             self.do_terminate = self.do_terminate.zero_()
 
         outputs = []
         for index in itertools.count():
             if input_width == 0 and index >= max_iterations:
                 break
-            if input_width == 0 and outputs:
-                self.do_terminate |= termination_condition(outputs[-1])
-            if input_width == 0 and self.do_terminate.all():
-                break
-            if index == input_width:
+            if input_width == 0 and term_fun and outputs:
+                self.do_terminate |= term_fun(outputs[-1])
+                if self.do_terminate.all():
+                    break
+            if input_width > 0 and index == seq_width:
                 break
 
             # Prepare first input to RNN
-            if index == 0 and input_width == 0:
-                output_stream = input[None, ...]
-            if index == 0 and input_width > 0:
+            if input_width == 0 and index == 0:
+                output_stream = input
+            if input_width > 0 and index == 0:
                 output_stream = (1 - self.linearity) * self.initial_stream
 
             # Insert the input into the stream
