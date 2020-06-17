@@ -1,6 +1,6 @@
 import dataloader
 
-dl = dataloader.DataLoader(10)
+dl = dataloader.DataLoader(200, max_line_len=1000)
 
-for i, (src, tgt) in enumerate(dl):
-    print(i, len(src), len(tgt), len(src[0] + tgt[0]))
+for i, (srcs, tgts) in enumerate(dl):
+    print(i, srcs.size(), tgts.size())
