@@ -1,8 +1,6 @@
 import random
 import torch
 
-# TODO: Pad bytes, not strings
-# TODO: Convert to torch tensors
 # TODO: .to(device)
 
 def bit_string_2_float_list(bit_string):
@@ -36,8 +34,7 @@ def split_lines(lines):
         yield Pair(src, tgt)
 
 def strip_pairs(pairs):
-    for pair in pairs:
-        yield pair.map(str.strip)
+    return (pair.map(str.strip) for pair in pairs)
 
 def filter_blank_pairs(pairs):
     def go(pair):
@@ -45,8 +42,7 @@ def filter_blank_pairs(pairs):
     return filter(go, pairs)
 
 def string_pairs_to_byte_pairs(pairs):
-    for pair in pairs:
-        yield pair.map(str.encode)
+    return (pair.map(str.encode) for pair in pairs)
 
 def filter_len(pairs, min=None, max=None):
     def go(pair):
@@ -91,10 +87,9 @@ class PairLengthGroups:
             self.groups[_len] = []
         self.groups[_len].append(pair)
 
-        return True
-
     def extend(self, pairs):
-        return all(self.append(pair) for pair in pairs)
+        for pair in pairs:
+            self.append(pair)
 
     def __repr__(self):
         return 'PairLengthGroups({})'.format(self.groups)
@@ -146,10 +141,12 @@ class DataLoader:
             max_src_len = max(map(len, srcs))
             max_tgt_len = max(map(len, tgts))
 
-            srcs = [pad_string(s, max_src_len) for s in srcs]
-            tgts = [pad_string(s, max_tgt_len) for s in tgts]
+            srcs = (pad_string(s, max_src_len) for s in srcs)
+            tgts = (pad_string(s, max_tgt_len) for s in tgts)
 
             srcs = [bytes_2_float_lists(s) for s in srcs]
             tgts = [bytes_2_float_lists(s) for s in tgts]
 
-            yield srcs, tgts
+            yield \
+                    torch.tensor(srcs).permute(1, 0, 2), \
+                    torch.tensor(tgts).permute(1, 0, 2)
