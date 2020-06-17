@@ -3,12 +3,12 @@ import torch
 
 # TODO: .to(device)
 
-def bit_string_2_float_list(bit_string):
-    return [float(b) for b in bit_string]
-
 def bytes_2_float_lists(bytes):
     bit_strings = ['{0:0>8b}'.format(b) for b in bytes]
     return [bit_string_2_float_list(bs) for bs in bit_strings]
+
+def bit_string_2_float_list(bit_string):
+    return [float(b) for b in bit_string]
 
 def float_lists_2_string(fl):
     rounded      = [[round(x) for x in xs] for xs in fl]
