@@ -103,25 +103,19 @@ class DataLoader:
         max_line_len=1000,
     ):
         self.batch_size = batch_size
-        self.corpus_file_name = \
-            corpus_file_name or \
-            'data/europarl-v9.de-en.tsv'
-        self.min_line_len = min_line_len
-        self.max_line_len = max_line_len
+        corpus_file_name = corpus_file_name or 'data/europarl-v9.de-en.tsv'
 
-        with open(self.corpus_file_name) as corpus_file:
-            self.corpus_data = corpus_file.readlines()
+        with open(corpus_file_name) as corpus_file:
+            corpus_data = corpus_file.readlines()
 
-        self.corpus_data = split_lines(self.corpus_data)
-        self.corpus_data = strip_pairs(self.corpus_data)
-        self.corpus_data = filter_blank_pairs(self.corpus_data)
-        self.corpus_data = string_pairs_to_byte_pairs(self.corpus_data)
-        self.corpus_data = filter_len(
-            self.corpus_data,
-            min=min_line_len,
-            max=max_line_len
-            )
-        self.corpus_data = PairLengthGroups(self.corpus_data)
+        corpus_data = split_lines(corpus_data)
+        corpus_data = strip_pairs(corpus_data)
+        corpus_data = filter_blank_pairs(corpus_data)
+        corpus_data = string_pairs_to_byte_pairs(corpus_data)
+        corpus_data = filter_len(corpus_data, min_line_len, max_line_len)
+        corpus_data = PairLengthGroups(corpus_data)
+
+        self.corpus_data = corpus_data
 
     def _choose_random_len_group(self):
         rand_pair_index = random.randint(0, len(self.corpus_data.pairs) - 1)
