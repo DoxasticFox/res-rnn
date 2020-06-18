@@ -24,17 +24,26 @@ def _broadcast_but_last(x, y):
     else:
         return new, y
 
+# TODO: Investigate doing this without cat; It uses lots of memory.
 class ShiftRight(torch.nn.Module):
     def __init__(self):
         super(ShiftRight, self).__init__()
 
-    def forward(self, s, x, new_width=None):
-        output_width = new_width if new_width is not None else x.size(-1)
+    def forward(self, s, x, output_width=None):
+        output_width = output_width or x.size(-1)
         assert(output_width <= s.size(-1) + x.size(-1))
+        assert(output_width >= s.size(-1))
+
+        excess_width = s.size(-1) + x.size(-1) - output_width
+        if excess_width > 0:
+            x = x[..., :-excess_width]
+        elif excess_width == 0:
+            x = x
+        else:
+            raise RuntimeError('excess_width should not be negative')
 
         s, x = _broadcast_but_last(s, x)
         x = torch.cat((s, x), dim=-1)
-        x = x[..., :output_width]
 
         return x
 
@@ -44,6 +53,9 @@ class Res(torch.nn.Module):
 
         self.linearity = linearity
 
+        # TODO: Investigate using fc1 in place of fc2. It led to a 10% reduction
+        #       in memory usage for a network with state_size=512 and a batch
+        #       size of 512. Removing fc2 entirely didn't seem to work.
         self.fc1 = torch.nn.Linear(width, width)
         self.fc2 = torch.nn.Linear(width, width)
 
