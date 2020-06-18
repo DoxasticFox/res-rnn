@@ -2,6 +2,8 @@ import random
 import torch
 
 # TODO: .to(device)
+# TODO: Add padding options. Choose a more specific class name for the
+#       DataLoader
 
 def bytes_2_float_lists(bytes):
     bit_strings = ['{0:0>8b}'.format(b) for b in bytes]
@@ -122,18 +124,20 @@ class DataLoader:
         rand_group_index = len(self.corpus_data.pairs[rand_pair_index])
         return self.corpus_data.groups[rand_group_index]
 
-    def _choose_random_pairs(self):
+    def _choose_random_batch_of_pairs(self):
         group = self._choose_random_len_group()
         batch_size = min(self.batch_size, len(group))
-        rand_pairs = random.choices(population=group, k=batch_size)
-        return rand_pairs
+        return random.choices(population=group, k=batch_size)
 
     def __iter__(self):
         while True:
-            srcs, tgts = zip(*self._choose_random_pairs())
+            srcs, tgts = zip(*self._choose_random_batch_of_pairs())
 
-            max_src_len = max(map(len, srcs))
-            max_tgt_len = max(map(len, tgts))
+            src_lens = [len(s) for s in srcs]
+            tgt_lens = [len(t) for t in tgts]
+
+            max_src_len = max(src_lens)
+            max_tgt_len = max(tgt_lens)
 
             srcs = (pad_string(s, max_src_len) for s in srcs)
             tgts = (pad_string(s, max_tgt_len) for s in tgts)
@@ -142,5 +146,5 @@ class DataLoader:
             tgts = [bytes_2_float_lists(s) for s in tgts]
 
             yield \
-                    torch.tensor(srcs).permute(1, 0, 2), \
-                    torch.tensor(tgts).permute(1, 0, 2)
+                (torch.tensor(srcs).permute(1, 0, 2), torch.tensor(src_lens)), \
+                (torch.tensor(tgts).permute(1, 0, 2), torch.tensor(tgt_lens))
