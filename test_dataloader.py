@@ -1,6 +1,6 @@
 import dataloader
 
-dl = dataloader.DataLoader(200, max_line_len=1000)
+dl = dataloader.BatchGenerator(200, max_line_len=1000)
 
-for i, ((srcs, src_lens), (tgts, tgt_lens)) in enumerate(dl):
-    print(i, srcs.size(), tgts.size())
+for i, batch in enumerate(dl):
+    print(i, dataloader.tensor_2_string(batch.tgts.permute(1, 0, 2)[0]))
