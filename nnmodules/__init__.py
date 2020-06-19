@@ -157,6 +157,7 @@ class ResRnn(torch.nn.Module):
                 seq_index if seq_index >= 0 else seq_width + seq_index
                 for seq_index in seq_indices
             ]
+            assert(all(0 <= seq_index < seq_width for seq_index in seq_indices))
             seq_index_to_batch_indices = collections.defaultdict(list)
             for batch_index, seq_index in enumerate(seq_indices):
                 seq_index_to_batch_indices[seq_index].append(batch_index)
@@ -169,11 +170,14 @@ class ResRnn(torch.nn.Module):
         # state:
         #     (batch_width, state_width) or
         #     (state_width)
-        # output_state:
-        #     (seq_width, batch_width, output_width)
+        # seq_indices:
+        #     int or
+        #     [int]
         # returns:
         #     (seq_width, batch_width, output_width) and
-        #     (seq_width, batch_width, state_width)
+        #     (seq_width, batch_width, state_width) or
+        #     (           batch_width, output_width) and
+        #     (           batch_width, state_width) or
 
         # Validate inputs
         input_seq_width, input_batch_width, input_width = input.size()
