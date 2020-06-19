@@ -52,9 +52,6 @@ class Res(torch.nn.Module):
 
         self.linearity = linearity
 
-        # TODO: Investigate using fc1 in place of fc2. It led to a 10% reduction
-        #       in memory usage for a network with state_size=512 and a batch
-        #       size of 512. Removing fc2 entirely didn't seem to work.
         self.fc1 = torch.nn.Linear(width, width)
         self.fc2 = torch.nn.Linear(width, width)
 
