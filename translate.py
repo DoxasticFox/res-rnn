@@ -14,7 +14,7 @@ input_size = 784
 state_size = 512
 output_size = 10
 num_epochs = 10000
-train_batch_size = 512
+train_batch_size = 1000
 test_batch_size = 100
 
 # MNIST dataset
@@ -66,7 +66,6 @@ for epoch in range(num_epochs):
 
         # Forward pass
         outputs, _ = model(images)
-        outputs = outputs[-1]
         total_loss = loss_fn(outputs, labels)
 
         # Backprpagation and optimization
@@ -100,7 +99,6 @@ for epoch in range(num_epochs):
                     images_ = images_.reshape(-1, 28 * 28, 1).permute(1, 0, 2).to(device)
                     labels_ = labels_.to(device)
                     outputs, _ = model(images_)
-                    outputs = outputs[-1]
                     _, predicted = torch.max(outputs.data, 1)
                     total += labels_.size(0)
                     correct += (predicted == labels_).sum().item()

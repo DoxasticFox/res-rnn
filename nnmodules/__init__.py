@@ -1,5 +1,6 @@
-import torch
+import collections
 import itertools
+import torch
 
 def _broadcast_but_last(x, y):
     if len(x.size()) == len(y.size()):
@@ -135,7 +136,34 @@ class ResRnn(torch.nn.Module):
         self.ins = ShiftRight()
         self.res = Res(self.stream_width, self.linearity)
 
-    def forward(self, input, state=None):
+    def _get_seq_to_batch_index_map(self, seq_indices):
+        if type(seq_indicies) is int:
+            seq_indicies = [seq_indicies] * input_batch_size
+        elif type(seq_indicies) is list:
+            assert(len(seq_indicies) == input_batch_size)
+            assert(all(type(seq_index) is int for seq_index in seq_indicies))
+        elif seq_indicies is None:
+            pass
+        else:
+            raise ValueError(
+                'seq_indicies must be an int or list of ints whose length is the '
+                'size of the batch'
+            )
+
+        if seq_indicies is None:
+            seq_index_to_batch_indices = None
+        else:
+            seq_indicies = [
+                seq_index if seq_index >= 0 else input_seq_width - seq_index
+                for seq_index in seq_indicies
+            ]
+            seq_index_to_batch_indices = collections.defaultdict(list)
+            for batch_index, seq_index in enumerate(seq_indicies):
+                seq_index_to_batch_indices[seq_index].append(batch_index)
+
+        return seq_index_to_batch_indices
+
+    def forward(self, input, state=None, seq_indicies=-1):
         # input:
         #     (seq_width, batch_width, input_width) or
         # state:
@@ -147,6 +175,7 @@ class ResRnn(torch.nn.Module):
         #     (seq_width, batch_width, output_width) and
         #     (seq_width, batch_width, state_width)
 
+        # Validate inputs
         input_seq_width, input_batch_width, input_width = input.size()
 
         state_batch_width, state_width = None, None
@@ -165,23 +194,45 @@ class ResRnn(torch.nn.Module):
         assert(state == None or state_width == self.state_width)
         assert(state == None or state_batch_width == input_batch_width)
         assert(state == None or input_seq_width == state_batch_width)
+        assert(input_batch_width > 0)
 
+        # Pre-process seq_indicies
+        seq_index_to_batch_indices = \
+            self._get_seq_to_batch_index_map(self.seq_indices)
+
+        # Set initial stream
         if state is None:
             stream = (1 - self.linearity) * self.initial_state
         else:
             stream = state
 
-        streams = []
-        for element in input:
+        # Used to collect return values
+        streams = [] if seq_index is None else [None] * input_batch_width
+        def append_to_streams(stream):
+            if seq_index_to_batch_indices is None:
+                streams.append(stream)
+            else:
+                for batch_index in seq_index_to_batch_indices[seq_index]:
+                    streams[batch_index] = stream[batch_index]
+
+        # Apply RNN
+        for seq_index, element in enumerate(input):
             stream = self.ins(element, stream, self.stream_width)
             stream = self.res(stream)
 
-            streams.append(stream)
+            append_to_streams(stream)
 
-        streams = torch.stack(streams)
+        # Concatenate streams and ensure everything is going as planned
+        streams = torch.cat(streams)
+        assert(
+            streams.size() in [
+                (input_seq_width, input_batch_width, self.stream_width),
+                (                 input_batch_width, self.stream_width),
+            ]
+        )
 
-        # We take the last output elements instead of the first because we
-        # hypothesise that this will make learning long distance dependencies
+        # We take the last elements as the output instead of the first because
+        # we hypothesise that this will make learning long distance dependencies
         # easier.
         outputs = streams[..., -self.output_width:]
         states  = streams[..., :-self.output_width]
