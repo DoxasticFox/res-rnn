@@ -183,21 +183,22 @@ class ResRnn(torch.nn.Module):
         input_seq_width, input_batch_width, input_width = input.size()
 
         state_batch_width, state_width = None, None
-        if state:
-            try:
-                state_batch_width, state_width = state.size()
-            except ValueError:
-                pass
-
+        if state is not None:
             try:
                 state_width = state.size()
             except ValueError:
                 pass
 
-        assert(                 input_width == self.input_width)
-        assert(state == None or state_width == self.state_width)
-        assert(state == None or state_batch_width == input_batch_width)
-        assert(state == None or input_seq_width == state_batch_width)
+            try:
+                state_batch_width, state_width = state.size()
+            except ValueError:
+                pass
+
+        assert(input_width == self.input_width)
+        assert(state is None or state_width == self.state_width)
+        assert(
+            state_batch_width is None or
+            state_batch_width == input_batch_width)
         assert(input_batch_width > 0)
 
         # Pre-process seq_indices
@@ -246,6 +247,6 @@ class ResRnn(torch.nn.Module):
         # we hypothesise that this will make learning long distance dependencies
         # easier.
         outputs = streams[..., -self.output_width:]
-        states  = streams[..., :-self.output_width]
+        states  = streams[..., :self.state_width]
 
         return outputs, states
