@@ -24,7 +24,6 @@ def _broadcast_but_last(x, y):
     else:
         return new, y
 
-# TODO: Investigate doing this without cat; It uses lots of memory.
 class ShiftRight(torch.nn.Module):
     def __init__(self):
         super(ShiftRight, self).__init__()
