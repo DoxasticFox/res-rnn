@@ -142,12 +142,16 @@ class ResRnn(torch.nn.Module):
         elif type(seq_indices) is list:
             assert(len(seq_indices) == batch_width)
             assert(all(type(seq_index) is int for seq_index in seq_indices))
+        elif type(seq_indices) is torch.Tensor:
+            assert(seq_indices.size() == (batch_width,))
+            seq_indices = seq_indices.tolist()
         elif seq_indices is None:
             pass
         else:
             raise ValueError(
-                'seq_indices must be an int or list of ints whose length is the '
-                'size of the batch'
+                'seq_indices must be an int, list of ints whose length is the '
+                'size of the batch, or 1-D tensor whose length is the size of '
+                'the batch'
             )
 
         if seq_indices is None:
