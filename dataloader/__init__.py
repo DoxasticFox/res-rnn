@@ -1,6 +1,5 @@
-import queue
+import multiprocessing
 import random
-import threading
 import torch
 
 def bytes_2_float_lists(bytes):
@@ -170,8 +169,8 @@ class BatchGenerator:
 
         # Asynchronously maintain a queue to reduce how long self.__iter__ calls
         # take.
-        self.iter_queue = queue.Queue(maxsize=5)
-        threading.Thread(target=self._fill_iter_queue, daemon=True).start()
+        self.iter_queue = multiprocessing.Queue(maxsize=5)
+        multiprocessing.Process(target=self._fill_iter_queue).start()
 
     def _choose_random_len_group(self):
         rand_pair_index = random.randint(0, len(self.corpus_data.pairs) - 1)
