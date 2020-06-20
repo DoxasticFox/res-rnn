@@ -1,7 +1,7 @@
+import queue
 import random
+import threading
 import torch
-
-# TODO: .to(device)
 
 def bytes_2_float_lists(bytes):
     bit_strings = ['{0:0>8b}'.format(b) for b in bytes]
@@ -168,6 +168,11 @@ class BatchGenerator:
 
         self.corpus_data = corpus_data
 
+        # Asynchronously maintain a queue to reduce how long self.__iter__ calls
+        # take.
+        self.iter_queue = queue.Queue(maxsize=5)
+        threading.Thread(target=self._fill_iter_queue, daemon=True).start()
+
     def _choose_random_len_group(self):
         rand_pair_index = random.randint(0, len(self.corpus_data.pairs) - 1)
         rand_group_index = len(self.corpus_data.pairs[rand_pair_index])
@@ -184,7 +189,7 @@ class BatchGenerator:
         seq = [bytes_2_float_lists(s) for s in seq]
         return seq
 
-    def __iter__(self):
+    def _fill_iter_queue(self):
         while True:
             srcs, tgts = zip(*self._choose_random_batch_of_pairs())
 
@@ -205,7 +210,7 @@ class BatchGenerator:
             srcs = self._pad_and_convert_to_float(srcs, max_src_len)
             tgts = self._pad_and_convert_to_float(tgts, max_tgt_len)
 
-            yield Batch(
+            batch = Batch(
                 torch.tensor(src_lang).permute(1, 0, 2),
                 torch.tensor(srcs).permute(1, 0, 2),
                 torch.tensor(src_lens),
@@ -213,3 +218,9 @@ class BatchGenerator:
                 torch.tensor(tgts).permute(1, 0, 2),
                 torch.tensor(tgt_lens),
             )
+
+            self.iter_queue.put(batch)
+
+    def __iter__(self):
+        while True:
+            yield self.iter_queue.get()
