@@ -20,6 +20,7 @@ def float_lists_2_string(fl):
     return joined_bytes.decode('utf-8', errors='ignore')
 
 def tensor_2_string(t):
+    t = t.clamp(min=0, max=1)
     t = [[float(x) for x in xs] for xs in t]
     return float_lists_2_string(t)
 
@@ -48,15 +49,20 @@ def filter_blank_pairs(pairs):
         return pair.src and pair.tgt
     return filter(go, pairs)
 
+def filter_periods(pairs):
+    def go(pair):
+        return '.' not in pair
+    return filter(go, pairs)
+
 def string_pairs_to_byte_pairs(pairs):
     return (pair.map(str.encode) for pair in pairs)
 
-def filter_len(pairs, min=None, max=None):
+def filter_len(pairs, _min=None, _max=None):
     def go(pair):
         _len = len(pair)
         return \
-                (min is None or _len >= min) and \
-                (max is None or _len <= max)
+                (_min is None or _len >= _min) and \
+                (_max is None or _len <= _max)
 
     return filter(go, pairs)
 
@@ -154,6 +160,7 @@ class BatchGenerator:
         corpus_data = split_lines(corpus_data)
         corpus_data = strip_pairs(corpus_data)
         corpus_data = filter_blank_pairs(corpus_data)
+        corpus_data = filter_periods(corpus_data)
         corpus_data = string_pairs_to_byte_pairs(corpus_data)
         corpus_data = filter_len(corpus_data, min_line_len, max_line_len)
         corpus_data = null_terminate_pairs(corpus_data)
@@ -199,10 +206,10 @@ class BatchGenerator:
             tgts = self._pad_and_convert_to_float(tgts, max_tgt_len)
 
             yield Batch(
-                torch.tensor(src_lang),
+                torch.tensor(src_lang).permute(1, 0, 2),
                 torch.tensor(srcs).permute(1, 0, 2),
                 torch.tensor(src_lens),
-                torch.tensor(tgt_lang),
+                torch.tensor(tgt_lang).permute(1, 0, 2),
                 torch.tensor(tgts).permute(1, 0, 2),
                 torch.tensor(tgt_lens),
             )
