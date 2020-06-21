@@ -43,7 +43,9 @@ class ShiftRight(torch.nn.Module):
             raise RuntimeError('excess_width should not be negative')
 
         s, x = _broadcast_but_last(s, x)
-        x = torch.cat((s, x), dim=-1)
+
+        if s.size(-1) > 0:
+            x = torch.cat((s, x), dim=-1)
 
         return x
 
@@ -249,8 +251,14 @@ class ResRnn(torch.nn.Module):
 
         # We take the last elements as the output instead of the first because
         # we hypothesise that this will make learning long distance dependencies
-        # easier.
-        outputs = streams[..., -self.output_width:]
-        states  = streams[..., :self.state_width]
+        # easier. We slice it in a verbose way to allow for zero-length slices.
+        outputs = streams[
+            ...,
+            self.stream_width - self.output_width:self.stream_width
+        ]
+        states  = streams[
+            ...,
+            :self.state_width
+        ]
 
         return outputs, states
