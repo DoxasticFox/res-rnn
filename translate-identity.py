@@ -23,7 +23,7 @@ tgt_model = nnmodules.ResRnn(
     output_width=8,
 ).to(device)
 
-smooth_l1_loss = torch.nn.SmoothL1Loss().to(device)
+smooth_l1_loss = torch.nn.functional.smooth_l1_loss
 
 optimizer = torch.optim.SGD(tgt_model.parameters(), lr=100000.0, momentum=0.9)
 
