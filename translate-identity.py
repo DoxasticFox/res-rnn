@@ -17,7 +17,7 @@ batches = dataloader.BatchGenerator(
     max_line_len=50
 )
 
-model = nnmodules.ResRnn(
+tgt_model = nnmodules.ResRnn(
     input_width=8,
     state_width=512,
     output_width=8,
@@ -25,45 +25,29 @@ model = nnmodules.ResRnn(
 
 smooth_l1_loss = torch.nn.SmoothL1Loss().to(device)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=100000.0, momentum=0.9)
+optimizer = torch.optim.SGD(tgt_model.parameters(), lr=100000.0, momentum=0.9)
 
 # Train the model
 for i, batch in enumerate(batches):
-    src_lang        = batch.src_lang.to(device)
     srcs            = batch.srcs.to(device)
     src_lens        = batch.src_lens.to(device)
 
-    tgt_lang        = batch.tgt_lang.to(device)
     tgts            = batch.tgts.to(device)
     tgt_lens        = batch.tgt_lens.to(device)
 
     zeros_like_srcs = torch.zeros_like(batch.srcs).to(device)
     zeros_like_tgts = torch.zeros_like(batch.tgts).to(device)
 
-    _, state = model(
-        tgt_lang
-    )
-    _, state = model(
-        tgts,
-        state=state,
-        seq_indices=tgt_lens - 1
-    )
-    _, state = model(
-        tgt_lang,
-        state=state
-    )
-    outputs, _ = model(
-        zeros_like_tgts,
-        state=state,
-        seq_indices=None
-    )
+    _,       state = tgt_model(tgts, seq_indices=tgt_lens - 1)
+    state          = state + torch.randn_like(state).to(device) * 0.25
+    outputs, _     = tgt_model(zeros_like_tgts, state=state, seq_indices=None)
 
     total_loss = smooth_l1_loss(outputs, tgts)
 
     # Backprpagation and optimization
     optimizer.zero_grad()
     total_loss.backward()
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 0.0001)
+    torch.nn.utils.clip_grad_norm_(tgt_model.parameters(), 0.0001)
     optimizer.step()
 
     if (i + 1) % 10 == 0:
@@ -71,7 +55,11 @@ for i, batch in enumerate(batches):
 
     if i % 100 == 0:
         with torch.no_grad():
-            print('Input: ')
-            print(dataloader.tensor_2_string(tgts.permute(1, 0, 2)[0]))
-            print('Output: ')
-            print(dataloader.tensor_2_string(outputs.permute(1, 0, 2)[0]))
+            print(
+                'Input :',
+                dataloader.tensor_2_string(tgts.permute(1, 0, 2)[0])
+            )
+            print(
+                'Output:',
+                dataloader.tensor_2_string(outputs.permute(1, 0, 2)[0])
+            )
