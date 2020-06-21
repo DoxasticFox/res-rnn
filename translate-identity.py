@@ -17,15 +17,20 @@ batches = dataloader.BatchGenerator(
     max_line_len=50
 )
 
-tgt_model = nnmodules.ResRnn(
-    input_width=8,
-    state_width=512,
-    output_width=8,
-).to(device)
+tgt_encode = nnmodules.ResRnn(input_width=8, state_width=500, output_width=0)
+tgt_decode = nnmodules.ResRnn(input_width=0, state_width=500, output_width=8)
+
+tgt_encode = tgt_encode.to(device)
+tgt_decode = tgt_decode.to(device)
 
 smooth_l1_loss = torch.nn.functional.smooth_l1_loss
 
-optimizer = torch.optim.SGD(tgt_model.parameters(), lr=100000.0, momentum=0.9)
+optimizer = torch.optim.SGD(
+    list(tgt_encode.parameters()) + \
+    list(tgt_decode.parameters()),
+    lr=100000.0,
+    momentum=0.9
+)
 
 # Train the model
 for i, batch in enumerate(batches):
@@ -35,19 +40,23 @@ for i, batch in enumerate(batches):
     tgts            = batch.tgts.to(device)
     tgt_lens        = batch.tgt_lens.to(device)
 
-    zeros_like_srcs = torch.zeros_like(batch.srcs).to(device)
-    zeros_like_tgts = torch.zeros_like(batch.tgts).to(device)
+    empty_srcs = torch.empty((srcs.size(0), srcs.size(1), 0)).to(device)
+    empty_tgts = torch.empty((tgts.size(0), tgts.size(1), 0)).to(device)
 
-    _,       state = tgt_model(tgts, seq_indices=tgt_lens - 1)
+    _,       state = tgt_encode(tgts, seq_indices=tgt_lens - 1)
     state          = state + torch.randn_like(state).to(device) * 0.25
-    outputs, _     = tgt_model(zeros_like_tgts, state=state, seq_indices=None)
+    outputs, _     = tgt_decode(empty_tgts, state=state, seq_indices=None)
 
     total_loss = smooth_l1_loss(outputs, tgts)
 
     # Backprpagation and optimization
     optimizer.zero_grad()
     total_loss.backward()
-    torch.nn.utils.clip_grad_norm_(tgt_model.parameters(), 0.0001)
+    torch.nn.utils.clip_grad_norm_(
+        list(tgt_encode.parameters()) + \
+        list(tgt_decode.parameters()),
+        0.0001
+    )
     optimizer.step()
 
     if (i + 1) % 10 == 0:
