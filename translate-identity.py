@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 
-import torch
-import torch.nn as nn
-import torchvision
-import torchvision.transforms as transforms
-import nnmodules
-import random
 import dataloader
+import nnmodules
+import torch
 
 # Check Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
