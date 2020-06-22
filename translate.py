@@ -44,10 +44,10 @@ batch_gen_args = {'batch_size': 50, 'max_line_len': 25}
 batches = dataloader.BatchGenerator(**batch_gen_args)
 batches_iter = iter(batches)
 
-ema_exponent = 0.9
-ema_batch_loss_init = 1.0
-ema_batch_loss = ema_batch_loss_init
+ema_weight = 0.99
 seq_size_inc_threshold = 0.005
+ema_batch_loss_init = seq_size_inc_threshold + 1.0
+ema_batch_loss = ema_batch_loss_init
 seq_size_inc = 5
 
 while True:
@@ -114,8 +114,8 @@ while True:
     if (i + 1) % 10 == 0:
         batch_loss_item = batch_loss.item()
         ema_batch_loss = \
-            ema_exponent * ema_batch_loss + \
-            (1.0 - ema_exponent) * batch_loss_item
+            ema_weight * ema_batch_loss + \
+            (1.0 - ema_weight) * batch_loss_item
         print(
             (
                 'Step {}, Batch loss: {:.4f}, EMA loss: {:.4f}, seq size: {}'
