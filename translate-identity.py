@@ -45,9 +45,23 @@ for i, batch in enumerate(batches):
     empty_srcs = torch.empty((srcs.size(0), srcs.size(1), 0)).to(device)
     empty_tgts = torch.empty((tgts.size(0), tgts.size(1), 0)).to(device)
 
+    # Create masks
+    src_lens_tiled  = src_lens.view(1, srcs.size(1), 1).expand(srcs.size())
+    tgt_lens_tiled  = tgt_lens.view(1, tgts.size(1), 1).expand(tgts.size())
+
+    src_indices = torch.arange(srcs.size(0)) \
+        .to(device).view(srcs.size(0), 1, 1).expand(srcs.size())
+    tgt_indices = torch.arange(tgts.size(0)) \
+        .to(device).view(tgts.size(0), 1, 1).expand(tgts.size())
+
+    src_mask = (src_indices < src_lens_tiled).float()
+    tgt_mask = (tgt_indices < tgt_lens_tiled).float()
+
+    # Run forward pass
     _,       state = tgt_enc(tgts, seq_indices=tgt_lens - 1)
     state          = state + torch.randn_like(state).to(device) * 0.25
     outputs, _     = tgt_dec(empty_tgts, state=state, seq_indices=None)
+    outputs        = outputs * tgt_mask
 
     total_loss = smooth_l1_loss(outputs, tgts)
 
