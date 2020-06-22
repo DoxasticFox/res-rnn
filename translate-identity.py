@@ -58,12 +58,16 @@ for i, batch in enumerate(batches):
     tgt_mask = (tgt_indices < tgt_lens_tiled).float()
 
     # Run forward pass
-    _,       state = tgt_enc(tgts, seq_indices=tgt_lens - 1)
-    state          = state + torch.randn_like(state).to(device) * 0.25
-    outputs, _     = tgt_dec(empty_tgts, state=state, seq_indices=None)
-    outputs        = outputs * tgt_mask
+    _, state_t = tgt_enc(tgts, seq_indices=tgt_lens - 1)
 
-    total_loss = smooth_l1_loss(outputs, tgts)
+    state_t_n = state_t + torch.randn_like(state_t).to(device) * 0.25
+
+    output_t_t, _ = tgt_dec(empty_tgts, state=state_t_n, seq_indices=None)
+
+    masked_output_t_t = output_t_t * tgt_mask
+
+    total_loss = \
+        smooth_l1_loss(masked_output_t_t, tgts)
 
     # Backprpagation and optimization
     optimizer.zero_grad()
@@ -75,7 +79,7 @@ for i, batch in enumerate(batches):
     )
     optimizer.step()
 
-    if i % 1000 == 0:
+    if i % 10000 == 0 and i > 0:
         tgt_enc.save_checkpoint()
         tgt_dec.save_checkpoint()
 
@@ -90,5 +94,5 @@ for i, batch in enumerate(batches):
             )
             print(
                 'Output:',
-                dataloader.tensor_2_string(outputs.permute(1, 0, 2)[0])
+                dataloader.tensor_2_string(output_t_t.permute(1, 0, 2)[0])
             )
