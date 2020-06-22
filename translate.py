@@ -16,10 +16,10 @@ tgt_enc = nnmodules.ResRnn(
 tgt_dec = nnmodules.ResRnn(
     input_width=0, state_width=1500, output_width=8, checkpoint_name='tgt_dec')
 
-src_enc.load('/home/christian/pytorch/checkpoints/src_enc/2.pt')
-src_dec.load('/home/christian/pytorch/checkpoints/src_dec/2.pt')
-tgt_enc.load('/home/christian/pytorch/checkpoints/tgt_enc/2.pt')
-tgt_dec.load('/home/christian/pytorch/checkpoints/tgt_dec/2.pt')
+src_enc.load('/home/christian/pytorch/checkpoints/src_enc-4/4.pt')
+src_dec.load('/home/christian/pytorch/checkpoints/src_dec-4/4.pt')
+tgt_enc.load('/home/christian/pytorch/checkpoints/tgt_enc-4/4.pt')
+tgt_dec.load('/home/christian/pytorch/checkpoints/tgt_dec-4/4.pt')
 
 src_enc = src_enc.to(device)
 src_dec = src_dec.to(device)
@@ -40,19 +40,18 @@ optimizer = torch.optim.SGD(
 # Train the model
 i = -1
 
-batch_gen_args = {'batch_size': 50, 'max_line_len': 25}
-batches = dataloader.BatchGenerator(**batch_gen_args)
-batches_iter = iter(batches)
+batch_gen_args = {'batch_size': 50, 'max_line_len': 40}
+batches = iter(dataloader.BatchGenerator(**batch_gen_args))
 
 ema_weight = 0.99
-seq_size_inc_threshold = 0.005
-ema_batch_loss_init = seq_size_inc_threshold + 1.0
+seq_size_inc_threshold = 0.007
+ema_batch_loss_init = 2.0 * seq_size_inc_threshold
 ema_batch_loss = ema_batch_loss_init
 seq_size_inc = 5
 
 while True:
     i += 1
-    batch = next(batches_iter)
+    batch = next(batches)
 
     srcs            = batch.srcs.to(device)
     src_lens        = batch.src_lens.to(device)
@@ -129,8 +128,7 @@ while True:
 
     if ema_batch_loss < seq_size_inc_threshold:
         batch_gen_args['max_line_len'] += seq_size_inc
-        batches = dataloader.BatchGenerator(**batch_gen_args)
-        batch_iter = iter(batches)
+        batches = iter(dataloader.BatchGenerator(**batch_gen_args))
         ema_batch_loss = ema_batch_loss_init
 
     if i % 100 == 0:
