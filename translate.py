@@ -117,7 +117,10 @@ while True:
             (1.0 - ema_weight) * batch_loss_item
         print(
             (
-                'Step {}, Batch loss: {:.4f}, EMA loss: {:.4f}, seq size: {}'
+                'Step {}, '
+                'Batch loss: {:.4f}, '
+                'EMA loss: {:.4f}, '
+                'Max seq size: {}'
             ).format(
                 i + 1,
                 batch_loss_item,
