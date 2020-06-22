@@ -7,12 +7,6 @@ import torch
 # Check Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-batches = dataloader.BatchGenerator(
-    batch_size=50,
-    min_line_len=5,
-    max_line_len=200
-)
-
 src_enc = nnmodules.ResRnn(
     input_width=8, state_width=1500, output_width=0, checkpoint_name='src_enc')
 src_dec = nnmodules.ResRnn(
@@ -21,6 +15,11 @@ tgt_enc = nnmodules.ResRnn(
     input_width=8, state_width=1500, output_width=0, checkpoint_name='tgt_enc')
 tgt_dec = nnmodules.ResRnn(
     input_width=0, state_width=1500, output_width=8, checkpoint_name='tgt_dec')
+
+src_enc.load('/home/christian/pytorch/checkpoints/src_enc/2.pt')
+src_dec.load('/home/christian/pytorch/checkpoints/src_dec/2.pt')
+tgt_enc.load('/home/christian/pytorch/checkpoints/tgt_enc/2.pt')
+tgt_dec.load('/home/christian/pytorch/checkpoints/tgt_dec/2.pt')
 
 src_enc = src_enc.to(device)
 src_dec = src_dec.to(device)
@@ -39,7 +38,22 @@ optimizer = torch.optim.SGD(
 )
 
 # Train the model
-for i, batch in enumerate(batches):
+i = -1
+
+batch_gen_args = {'batch_size': 50, 'max_line_len': 25}
+batches = dataloader.BatchGenerator(**batch_gen_args)
+batches_iter = iter(batches)
+
+ema_exponent = 0.9
+ema_batch_loss_init = 1.0
+ema_batch_loss = ema_batch_loss_init
+seq_size_inc_threshold = 0.005
+seq_size_inc = 5
+
+while True:
+    i += 1
+    batch = next(batches_iter)
+
     srcs            = batch.srcs.to(device)
     src_lens        = batch.src_lens.to(device)
 
@@ -74,14 +88,14 @@ for i, batch in enumerate(batches):
     masked_output_s_s = output_s_s * src_mask
     masked_output_t_t = output_t_t * tgt_mask
 
-    total_loss = \
+    batch_loss = \
         smooth_l1_loss(state_s, state_t) + \
         smooth_l1_loss(masked_output_s_s, srcs) + \
         smooth_l1_loss(masked_output_t_t, tgts)
 
     # Backprpagation and optimization
     optimizer.zero_grad()
-    total_loss.backward()
+    batch_loss.backward()
     torch.nn.utils.clip_grad_norm_(
         list(src_enc.parameters()) + \
         list(src_dec.parameters()) + \
@@ -98,7 +112,26 @@ for i, batch in enumerate(batches):
         tgt_dec.save_checkpoint()
 
     if (i + 1) % 10 == 0:
-        print('Step {}, Total loss: {:.4f}'.format(i + 1, total_loss.item()))
+        batch_loss_item = batch_loss.item()
+        ema_batch_loss = \
+            ema_exponent * ema_batch_loss + \
+            (1.0 - ema_exponent) * batch_loss_item
+        print(
+            (
+                'Step {}, Batch loss: {:.4f}, EMA loss: {:.4f}, seq size: {}'
+            ).format(
+                i + 1,
+                batch_loss_item,
+                ema_batch_loss,
+                batch_gen_args['max_line_len'],
+            )
+        )
+
+    if ema_batch_loss < seq_size_inc_threshold:
+        batch_gen_args['max_line_len'] += seq_size_inc
+        batches = dataloader.BatchGenerator(**batch_gen_args)
+        batch_iter = iter(batches)
+        ema_batch_loss = ema_batch_loss_init
 
     if i % 100 == 0:
         output_s_t, _ = tgt_dec(empty_tgts, state=state_s, seq_indices=None)
