@@ -2,6 +2,8 @@ import multiprocessing
 import random
 import torch
 
+padding_byte = b'\x00'
+
 def bytes_2_float_lists(bytes):
     bit_strings = ['{0:0>8b}'.format(b) for b in bytes]
     return [bit_string_2_float_list(bs) for bs in bit_strings]
@@ -16,7 +18,8 @@ def float_lists_2_string(fl):
     ints         = [int(x, 2)              for x  in joined]
     bytes        = [x.to_bytes(1, 'big')   for x  in ints]
     joined_bytes = b''.join(bytes)
-    return joined_bytes.decode('utf-8', errors='ignore')
+    s            = joined_bytes.decode('utf-8', errors='ignore')
+    return s.split(padding_byte.decode('utf-8'))[0]
 
 def tensor_2_string(t):
     t = t.clamp(min=0, max=1)
@@ -26,11 +29,11 @@ def tensor_2_string(t):
 def null_terminate_bytes(b):
     return b + b'\x00'
 
-def pad_bytes(s, target_len, padding_char=b'\x00'):
+def pad_bytes(s, target_len):
     if len(s) > target_len:
         raise ValueError('length of string exceeds target length')
     else:
-        return s + padding_char * (target_len - len(s))
+        return s + padding_byte * (target_len - len(s))
 
 def split_lines(lines):
     for line in lines:
