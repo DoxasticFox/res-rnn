@@ -62,12 +62,12 @@ for i, batch in enumerate(batches):
 
     masked_output_t_t = output_t_t * tgt_mask
 
-    total_loss = \
+    batch_loss = \
         smooth_l1_loss(masked_output_t_t, tgts)
 
     # Backprpagation and optimization
     optimizer.zero_grad()
-    total_loss.backward()
+    batch_loss.backward()
     torch.nn.utils.clip_grad_norm_(
         list(tgt_enc.parameters()) + \
         list(tgt_dec.parameters()),
@@ -80,7 +80,7 @@ for i, batch in enumerate(batches):
         tgt_dec.save_checkpoint()
 
     if (i + 1) % 10 == 0:
-        print('Step {}, Total loss: {:.4f}'.format(i + 1, total_loss.item()))
+        print('Step {}, Batch loss: {:.4f}'.format(i + 1, batch_loss.item()))
 
     if i % 100 == 0:
         with torch.no_grad():
