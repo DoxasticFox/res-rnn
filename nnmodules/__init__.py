@@ -1,5 +1,7 @@
+import __main__
 import collections
 import itertools
+import os
 import torch
 
 def _broadcast_but_last(x, y):
@@ -117,7 +119,8 @@ class ResRnn(torch.nn.Module):
         input_width,
         state_width,
         output_width,
-        linearity=0.99999
+        linearity=0.99999,
+        checkpoint_name='ResRnn',
     ):
         super(ResRnn, self).__init__()
 
@@ -126,10 +129,15 @@ class ResRnn(torch.nn.Module):
         self.output_width = output_width
         self.stream_width = input_width + state_width
         self.linearity = linearity
+        self.checkpoint_name = checkpoint_name
 
         assert(self.output_width <= self.stream_width)
         assert(self.input_width >= 0)
         assert(self.state_width >= 0)
+
+        # Variables for coordinating checkpointing
+        self.checkpoint_dir = None
+        self.num_checkpoints = 0
 
         self.initial_state = torch.nn.Parameter(
             torch.zeros(size=(self.state_width,)),
@@ -262,3 +270,60 @@ class ResRnn(torch.nn.Module):
         ]
 
         return outputs, states
+
+    def _set_checkpoint_dir_if_none(self, file_name):
+        def candidate_paths(path_name):
+            yield path_name
+            yield from (path_name + '-' + str(i + 2) for i in itertools.count())
+        def unique_path(path_name):
+            for candidate_path in candidate_paths(path_name):
+                if not os.path.exists(candidate_path):
+                    return candidate_path
+
+        # Set self.checkpoint_dir if it isn't already
+        if self.checkpoint_dir is None:
+            abs_save_dir = os.path.dirname(os.path.realpath(__main__.__file__))
+            abs_file_name = (
+                file_name
+                if os.path.isabs(file_name)
+                else os.path.join(abs_save_dir, file_name)
+            )
+            self.checkpoint_dir = unique_path(os.path.dirname(abs_file_name))
+
+        checkpoint_file_name = os.path.join(
+            self.checkpoint_dir,
+            os.path.basename(file_name)
+        )
+
+    def save_checkpoint(self):
+        file_name = 'checkpoints/{}/{}.pt'.format(
+            self.checkpoint_name,
+            self.num_checkpoints
+        )
+
+        self._set_checkpoint_dir_if_none(file_name)
+
+        checkpoint_file_name = os.path.join(
+            self.checkpoint_dir,
+            os.path.basename(file_name)
+        )
+
+        print(
+            'Saving checkpoint for {} to {}'.format(
+                self.checkpoint_name,
+                checkpoint_file_name
+            )
+        )
+
+        # Create dir + checkpoint
+        self.save(checkpoint_file_name)
+
+        self.num_checkpoints += 1
+
+    def save(self, file_name):
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
+        torch.save(self.state_dict(), file_name)
+
+    def load(self, file_name):
+        self.load_state_dict(torch.load(file_name))
+        self.eval()
