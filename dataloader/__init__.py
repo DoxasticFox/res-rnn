@@ -23,6 +23,7 @@ def float_lists_2_string(fl):
 
 def tensor_2_string(t):
     t = t.clamp(min=0, max=1)
+    t = t.tolist()
     t = [[float(x) for x in xs] for xs in t]
     return float_lists_2_string(t)
 
