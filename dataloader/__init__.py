@@ -132,6 +132,15 @@ class Batch:
         self.tgts     = tgts
         self.tgt_lens = tgt_lens
 
+    def to(self, device):
+        self.src_lang = self.src_lang.to(device)
+        self.srcs     = self.srcs    .to(device)
+        self.src_lens = self.src_lens.to(device)
+        self.tgt_lang = self.tgt_lang.to(device)
+        self.tgts     = self.tgts    .to(device)
+        self.tgt_lens = self.tgt_lens.to(device)
+        return self
+
 class BatchGenerator:
     def __init__(
         self,
@@ -140,9 +149,12 @@ class BatchGenerator:
         min_line_len=2,
         max_line_len=1000,
         src_lang=None,
-        tgt_lang=None
+        tgt_lang=None,
+        device=None,
+        num_workers=16,
     ):
         self.batch_size = batch_size
+        self.device = device
         corpus_file_name = corpus_file_name or 'data/europarl-v9.de-en.tsv'
 
         # Parse lang names
@@ -172,8 +184,20 @@ class BatchGenerator:
 
         # Asynchronously maintain a queue to reduce how long self.__iter__ calls
         # take.
-        self.iter_queue = multiprocessing.Queue(maxsize=5)
-        multiprocessing.Process(target=self._fill_iter_queue).start()
+        self.iter_queue = multiprocessing.Queue(maxsize=10 * num_workers)
+        self.iter_queue_procs = []
+        for _ in range(num_workers):
+            self.iter_queue_procs.append(
+                multiprocessing.Process(
+                    target=self._fill_iter_queue,
+                    daemon=True,
+                )
+            )
+            self.iter_queue_procs[-1].start()
+
+    def __del__(self):
+        for iter_queue_proc in self.iter_queue_procs:
+            iter_queue_proc.terminate()
 
     def _choose_random_len_group(self):
         rand_pair_index = random.randint(0, len(self.corpus_data.pairs) - 1)
@@ -225,4 +249,4 @@ class BatchGenerator:
 
     def __iter__(self):
         while True:
-            yield self.iter_queue.get()
+            yield self.iter_queue.get().to(self.device)
