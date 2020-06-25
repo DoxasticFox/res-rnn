@@ -120,6 +120,7 @@ class ResRnn(torch.nn.Module):
         state_width,
         output_width,
         linearity=0.99999,
+        noise_gain=0.1,
         checkpoint_name='ResRnn',
     ):
         super(ResRnn, self).__init__()
@@ -129,6 +130,7 @@ class ResRnn(torch.nn.Module):
         self.output_width = output_width
         self.stream_width = input_width + state_width
         self.linearity = linearity
+        self.noise_gain = noise_gain
         self.checkpoint_name = checkpoint_name
 
         assert(self.output_width <= self.stream_width)
@@ -244,6 +246,8 @@ class ResRnn(torch.nn.Module):
         # Apply RNN
         for seq_index, element in enumerate(input):
             stream = self.ins(element, stream, self.stream_width)
+            if self.training:
+                stream = stream + torch.randn_like(stream) * self.noise_gain
             stream = self.res(stream)
 
             append_to_streams(stream)
