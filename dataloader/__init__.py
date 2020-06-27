@@ -146,6 +146,7 @@ class BatchGenerator:
     def __init__(
         self,
         batch_size,
+        similar_lengths=False,
         corpus_file_name=None,
         min_line_len=2,
         max_line_len=1000,
@@ -155,6 +156,7 @@ class BatchGenerator:
         num_workers=16,
     ):
         self.batch_size = batch_size
+        self.similar_lengths = similar_lengths
         self.device = device
         corpus_file_name = corpus_file_name or 'data/europarl-v9.de-en.tsv'
 
@@ -206,9 +208,13 @@ class BatchGenerator:
         return self.corpus_data.groups[rand_group_index]
 
     def _choose_random_batch_of_pairs(self):
-        group = self._choose_random_len_group()
-        batch_size = min(self.batch_size, len(group))
-        return random.choices(population=group, k=batch_size)
+        population = (
+            self._choose_random_len_group()
+            if self.similar_lengths
+            else self.corpus_data.pairs
+        )
+        batch_size = min(self.batch_size, len(population))
+        return random.choices(population=population, k=batch_size)
 
     def _pad_and_convert_to_float(self, seq, _len=None):
         if _len:
