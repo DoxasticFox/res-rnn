@@ -27,9 +27,6 @@ def tensor_2_string(t):
     t = [[float(x) for x in xs] for xs in t]
     return float_lists_2_string(t)
 
-def null_terminate_bytes(b):
-    return b + b'\x00'
-
 def pad_bytes(s, target_len):
     if len(s) > target_len:
         raise ValueError('length of string exceeds target length')
@@ -68,9 +65,6 @@ def filter_len(pairs, _min=None, _max=None):
                 (_max is None or _len <= _max)
 
     return filter(go, pairs)
-
-def null_terminate_pairs(pairs):
-    return (pair.map(null_terminate_bytes) for pair in pairs)
 
 def parse_lang_names(file_name):
     segments = file_name.split('.')
@@ -180,7 +174,6 @@ class BatchGenerator:
         corpus_data = filter_periods(corpus_data)
         corpus_data = string_pairs_to_byte_pairs(corpus_data)
         corpus_data = filter_len(corpus_data, min_line_len, max_line_len)
-        corpus_data = null_terminate_pairs(corpus_data)
         corpus_data = PairLengthGroups(corpus_data)
 
         self.corpus_data = corpus_data
@@ -237,8 +230,8 @@ class BatchGenerator:
             src_lens = [len(s) for s in srcs]
             tgt_lens = [len(t) for t in tgts]
 
-            max_src_len = max(src_lens)
-            max_tgt_len = max(tgt_lens)
+            max_src_len = max(src_lens) + 1
+            max_tgt_len = max(tgt_lens) + 1
 
             srcs = self._pad_and_convert_to_float(srcs, max_src_len)
             tgts = self._pad_and_convert_to_float(tgts, max_tgt_len)
