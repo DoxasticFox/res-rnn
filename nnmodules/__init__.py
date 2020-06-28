@@ -60,7 +60,7 @@ class Res(torch.nn.Module):
         self.fc1 = torch.nn.Linear(width, width)
         self.fc2 = torch.nn.Linear(width, width)
 
-        torch.nn.init.xavier_uniform_(self.fc1.weight, gain=1.0)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
         torch.nn.init.kaiming_uniform_(self.fc2.weight)
 
         torch.nn.init.zeros_(self.fc1.bias)
@@ -99,8 +99,8 @@ class ShiftedResNet(torch.nn.Module):
 
         self.fc2 = torch.nn.Linear(hidden_width, output_width)
 
-        torch.nn.init.xavier_uniform_(self.fc1.weight, gain=1.0)
-        torch.nn.init.xavier_uniform_(self.fc2.weight, gain=1.0)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        torch.nn.init.xavier_uniform_(self.fc2.weight)
 
     def forward(self, x):
         x = self.fc1(x)
@@ -120,7 +120,6 @@ class ResRnn(torch.nn.Module):
         state_width,
         output_width,
         linearity=0.99999,
-        noise_gain=0.1,
         checkpoint_name='ResRnn',
     ):
         super(ResRnn, self).__init__()
@@ -130,7 +129,6 @@ class ResRnn(torch.nn.Module):
         self.output_width = output_width
         self.stream_width = input_width + state_width
         self.linearity = linearity
-        self.noise_gain = noise_gain
         self.checkpoint_name = checkpoint_name
 
         assert(self.output_width <= self.stream_width)
@@ -246,8 +244,6 @@ class ResRnn(torch.nn.Module):
         # Apply RNN
         for seq_index, element in enumerate(input):
             stream = self.ins(element, stream, self.stream_width)
-            if self.training:
-                stream = stream + torch.randn_like(stream) * self.noise_gain
             stream = self.res(stream)
 
             append_to_streams(stream)
@@ -321,6 +317,8 @@ class ResRnn(torch.nn.Module):
 
         # Create dir + checkpoint
         self.save(checkpoint_file_name)
+
+        print('Checkpoint saved')
 
         self.num_checkpoints += 1
 
