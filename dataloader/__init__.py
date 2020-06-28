@@ -11,7 +11,7 @@ def bytes_2_float_lists(bytes):
 def bit_string_2_float_list(bit_string):
     return [float(b) for b in bit_string]
 
-def float_lists_2_string(fl):
+def float_lists_2_string(fl, null_terminate):
     rounded      = [[round(x) for x in xs] for xs in fl]
     strings      = [[str(x)   for x in xs] for xs in rounded]
     joined       = [''.join(xs)            for xs in strings]
@@ -19,13 +19,18 @@ def float_lists_2_string(fl):
     bytes        = [x.to_bytes(1, 'big')   for x  in ints]
     joined_bytes = b''.join(bytes)
     s            = joined_bytes.decode('utf-8', errors='ignore')
-    return s.split(padding_byte.decode('utf-8'))[0]
+    s            = (
+        s.split(padding_byte.decode('utf-8'))[0]
+        if null_terminate
+        else s
+    )
+    return s
 
-def tensor_2_string(t):
+def tensor_2_string(t, null_terminate=True):
     t = t.clamp(min=0, max=1)
     t = t.tolist()
     t = [[float(x) for x in xs] for xs in t]
-    return float_lists_2_string(t)
+    return float_lists_2_string(t, null_terminate)
 
 def pad_bytes(s, target_len):
     if len(s) > target_len:
@@ -119,20 +124,34 @@ class PairLengthGroups:
         return 'PairLengthGroups({})'.format(self.groups)
 
 class Batch:
-    def __init__(self, src_lang, srcs, src_lens, tgt_lang, tgts, tgt_lens):
+    def __init__(
+            self,
+            src_lang,
+            srcs,
+            rsrcs,
+            src_lens,
+            tgt_lang,
+            tgts,
+            rtgts,
+            tgt_lens
+    ):
         self.src_lang = src_lang
         self.srcs     = srcs
+        self.rsrcs    = rsrcs
         self.src_lens = src_lens
         self.tgt_lang = tgt_lang
         self.tgts     = tgts
+        self.rtgts    = rtgts
         self.tgt_lens = tgt_lens
 
     def to(self, device):
         self.src_lang = self.src_lang.to(device)
         self.srcs     = self.srcs    .to(device)
+        self.rsrcs    = self.rsrcs   .to(device)
         self.src_lens = self.src_lens.to(device)
         self.tgt_lang = self.tgt_lang.to(device)
         self.tgts     = self.tgts    .to(device)
+        self.rtgts    = self.rtgts   .to(device)
         self.tgt_lens = self.tgt_lens.to(device)
         return self
 
@@ -219,6 +238,9 @@ class BatchGenerator:
         while True:
             srcs, tgts = zip(*self._choose_random_batch_of_pairs())
 
+            rsrcs = [s[::-1] for s in srcs]
+            rtgts = [s[::-1] for s in tgts]
+
             # Generate src_lang and tgt_lang
             src_lang = [self.src_lang.encode()] * len(srcs)
             tgt_lang = [self.tgt_lang.encode()] * len(tgts)
@@ -227,21 +249,26 @@ class BatchGenerator:
             tgt_lang = self._pad_and_convert_to_float(tgt_lang)
 
             # Package batch
-            src_lens = [len(s) for s in srcs]
-            tgt_lens = [len(t) for t in tgts]
+            src_lens = [len(s) + 1 for s in srcs]
+            tgt_lens = [len(t) + 1 for t in tgts]
 
-            max_src_len = max(src_lens) + 1
-            max_tgt_len = max(tgt_lens) + 1
+            max_src_len = max(src_lens)
+            max_tgt_len = max(tgt_lens)
 
             srcs = self._pad_and_convert_to_float(srcs, max_src_len)
             tgts = self._pad_and_convert_to_float(tgts, max_tgt_len)
 
+            rsrcs = self._pad_and_convert_to_float(rsrcs, max_src_len)
+            rtgts = self._pad_and_convert_to_float(rtgts, max_tgt_len)
+
             batch = Batch(
                 torch.tensor(src_lang).permute(1, 0, 2),
                 torch.tensor(srcs).permute(1, 0, 2),
+                torch.tensor(rsrcs).permute(1, 0, 2),
                 torch.tensor(src_lens),
                 torch.tensor(tgt_lang).permute(1, 0, 2),
                 torch.tensor(tgts).permute(1, 0, 2),
+                torch.tensor(rtgts).permute(1, 0, 2),
                 torch.tensor(tgt_lens),
             )
 
