@@ -28,8 +28,6 @@ model = nnmodules.ResRnn(
 
 model.load('models/pmnist-1-4000-10-98.45.pt')
 
-# Loss and optimizer
-
 torch.manual_seed(0)
 random_indices = torch.randperm(28 * 28)
 
