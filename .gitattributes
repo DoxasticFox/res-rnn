@@ -1,1 +1,2 @@
 models/ filter=lfs diff=lfs merge=lfs -text
+models/pmnist-1-4000-10-98.45.pt filter=lfs diff=lfs merge=lfs -text
