@@ -15,3 +15,13 @@ A recurrent neural network with residual connections.
 % ./pmnist-test-4000.py
 Accuracy of the network on the 10000 test images: 98.45 %
 ```
+
+## I’m Too Lazy for TikZ but Here’s the Architecture
+
+### The Res-RNN Applied to a Sequence
+
+![Figure 1](https://github.com/doxastifox/res-rnn/blob/master/images/figure-1.jpg?raw=true)
+
+### The Res-RNN Itself
+
+![Figure 2](https://github.com/doxastifox/res-rnn/blob/master/images/figure-2.jpg?raw=true)
