@@ -20,8 +20,8 @@ Accuracy of the network on the 10000 test images: 98.45 %
 
 ### The Res-RNN Applied to a Sequence
 
-![Figure 1](https://github.com/doxastifox/res-rnn/blob/master/images/figure-1.jpg?raw=true)
+![Figure 1](https://github.com/DoxasticFox/res-rnn/raw/master/figures/figure-1.jpg)
 
 ### The Res-RNN Itself
 
-![Figure 2](https://github.com/doxastifox/res-rnn/blob/master/images/figure-2.jpg?raw=true)
+![Figure 2](https://github.com/DoxasticFox/res-rnn/raw/master/figures/figure-2.jpg)
