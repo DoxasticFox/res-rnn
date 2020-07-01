@@ -24,7 +24,16 @@ optimizer = torch.optim.SGD(
     momentum=0.9,
 )
 
-def model(b, training):
+def model(b):
+    shift_tgts = torch.cat(
+        (
+            b.tgts[1:, :, :],
+            torch.zeros((1, b.tgts.size(1), b.tgts.size(2))).to(device),
+        ),
+        dim=0
+    ).to(device)
+
+
     empty_tgts = torch.zeros((b.tgts.size(0), b.tgts.size(1), 8)).to(device)
 
     # Create masks
@@ -36,25 +45,36 @@ def model(b, training):
     tgt_mask = (tgt_indices < tgt_lens_tiled).float()
 
     # Run forward pass
-    _, state_t = tgt_enc(b.rtgts, seq_indices=b.tgt_lens - 1)
+    unmasked_output_t, state_t = tgt_enc(b.tgts, seq_indices=None)
 
-    # if training:
-    #     state_t = state_t + torch.randn_like(state_t) * 0.1
+    state_t = state_t[
+        b.tgt_lens - 1,
+        torch.arange(b.tgts.size(1))
+    ]
 
-    unmasked_output_t_t, _ = tgt_dec(empty_tgts, state=state_t, seq_indices=None)
+    #unmasked_output_t_t, _ = tgt_dec(empty_tgts, state=state_t, seq_indices=None)
+    unmasked_output_t_t, _ = None, None
 
-    masked_output_t_t = unmasked_output_t_t * tgt_mask
+    masked_output_t   = unmasked_output_t   * tgt_mask
+    #masked_output_t_t = unmasked_output_t_t * tgt_mask
+    masked_output_t_t = None
 
     batch_loss = (
         torch.nn.functional.smooth_l1_loss(
-            masked_output_t_t,
-            b.tgts,
+            masked_output_t,
+            shift_tgts,
             reduction='sum',
         ) / tgt_mask.sum()
+        # torch.nn.functional.smooth_l1_loss(
+        #     masked_output_t_t,
+        #     b.tgts,
+        #     reduction='sum',
+        # ) / tgt_mask.sum()
     )
 
     return (
         empty_tgts,
+        unmasked_output_t,
         unmasked_output_t_t,
         state_t,
         batch_loss,
@@ -64,7 +84,7 @@ def model(b, training):
 batch_gen_args = dict(
     batch_size=batch_size,
     min_line_len=2,
-    max_line_len=50,
+    max_line_len=100,
     device=device,
 )
 batches = iter(dataloader.BatchGenerator(**batch_gen_args))
@@ -79,10 +99,11 @@ for i in itertools.count():
         with torch.no_grad():
             (
                 empty_tgts,
+                unmasked_output_t,
                 unmasked_output_t_t,
                 state_t,
                 batch_loss,
-            ) = model(b, training=False)
+            ) = model(b)
             batch_loss_item = batch_loss.item()
 
         ema_batch_loss = (
@@ -109,17 +130,22 @@ for i in itertools.count():
             dataloader.tensor_2_string(b.tgts.permute(1, 0, 2)[0])
         )
         print(
-            'Output (t_t):',
-            dataloader.tensor_2_string(unmasked_output_t_t.permute(1, 0, 2)[0])
+            'Output (t)  : ',
+            dataloader.tensor_2_string(unmasked_output_t.permute(1, 0, 2)[0])
         )
+        # print(
+        #     'Output (t_t):',
+        #     dataloader.tensor_2_string(unmasked_output_t_t.permute(1, 0, 2)[0])
+        # )
         print()
 
     (
         empty_tgts,
+        unmasked_output_t,
         unmasked_output_t_t,
         state_t,
         batch_loss,
-    ) = model(b, training=True)
+    ) = model(b)
 
     # Backprpagation and optimization
     optimizer.zero_grad()
@@ -130,7 +156,3 @@ for i in itertools.count():
         1e-4
     )
     optimizer.step()
-
-    if i % 1000 == 0 and i > 0:
-        tgt_enc.save_checkpoint()
-        tgt_dec.save_checkpoint()
