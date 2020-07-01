@@ -77,42 +77,6 @@ class Res(torch.nn.Module):
 
         return x
 
-class ShiftedResNet(torch.nn.Module):
-    def __init__(
-            self,
-            input_width,
-            hidden_width,
-            output_width,
-            depth=100,
-            linearity=0.97
-    ):
-        super(ShiftedResNet, self).__init__()
-
-        self.register_buffer('zero', torch.tensor([0.0]))
-
-        self.fc1 = torch.nn.Linear(input_width, hidden_width)
-
-        self.shf = torch.nn.ModuleList(
-            ShiftRight() for _ in range(depth))
-        self.res = torch.nn.ModuleList(
-            Res(hidden_width, linearity) for _ in range(depth))
-
-        self.fc2 = torch.nn.Linear(hidden_width, output_width)
-
-        torch.nn.init.xavier_uniform_(self.fc1.weight)
-        torch.nn.init.xavier_uniform_(self.fc2.weight)
-
-    def forward(self, x):
-        x = self.fc1(x)
-
-        for s, r in zip(self.shf, self.res):
-            x = s(x, self.zero.expand((25,)))
-            x = r(x)
-
-        x = self.fc2(x)
-
-        return x
-
 class ResRnn(torch.nn.Module):
     def __init__(
         self,
