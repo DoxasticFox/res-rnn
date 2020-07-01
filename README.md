@@ -1,6 +1,6 @@
 # ResRNN
 
-A recurrent neural network with residual connections. It gets SOTA on pMNIST.
+A recurrent neural network with residual connections. It beats state-of-the-art on pMNIST despite a trivially simple design.
 
 ## Random
 
