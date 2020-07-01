@@ -12,6 +12,6 @@ A recurrent neural network with residual connections.
 ## Testing The 4000-dimensional pMNIST Model
 
 ```bash
-~/pytorch % ./pmnist-test-4000.py
+% ./pmnist-test-4000.py
 Accuracy of the network on the 10000 test images: 98.45 %
 ```
