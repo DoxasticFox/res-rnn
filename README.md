@@ -19,6 +19,8 @@ One thing to note about the residual connection shown below is that [it's weight
 
 ### The Res-RNN Applied to a Sequence
 
+Weird stuff is happening here. At each time step, instead of doing additions and/or multiplications to combine the input with the state, like in a regular RNN, I'm "shifting" (like bit shifting) the input into the fixed-size vector which gets fed into the next RNN step. That means that part of the previous state is truncated and ignored. Although I don't see why the model couldn't learn to put all the useful info into the part of the state which is always retained.
+
 ![Figure 1](https://github.com/DoxasticFox/res-rnn/raw/master/figures/figure-1.jpg)
 
 ## Random
