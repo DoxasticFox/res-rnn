@@ -18,12 +18,12 @@ Accuracy of the network on the 10000 test images: 98.45 %
 
 ## I’m Too Lazy for TikZ but Here’s the Architecture
 
-### The Res-RNN Applied to a Sequence
-
-![Figure 1](https://github.com/DoxasticFox/res-rnn/raw/master/figures/figure-1.jpg)
-
 ### The Res-RNN Itself
 
 One thing to note about the residual connection shown below is that [it's weighted](https://github.com/DoxasticFox/res-rnn/blob/c219ebe37e7560a6f512a391c34041af88cfb81f/nnmodules/__init__.py#L76) similarly to in a Gated Recurrent Network (GRU). However, unlike a in GRU, the model isn't allowed to learn what proportion of the output comes from the skip connection and what proportion comes from the previous layer. This shouldn't matter, because the model can learn to make the magnitude of the previous layer large enough to overcome the fixed weight.
 
 ![Figure 2](https://github.com/DoxasticFox/res-rnn/raw/master/figures/figure-2.jpg)
+
+### The Res-RNN Applied to a Sequence
+
+![Figure 1](https://github.com/DoxasticFox/res-rnn/raw/master/figures/figure-1.jpg)
