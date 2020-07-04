@@ -1,6 +1,6 @@
 # ResRNN
 
-A recurrent neural network with residual connections. It beats state-of-the-art on pMNIST despite a trivially simple design.
+A recurrent neural network with residual connections. It beats state-of-the-art on pMNIST despite its trivially simple design.
 
 ## Random
 
