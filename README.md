@@ -1,6 +1,6 @@
 # ResRNN
 
-A recurrent neural network with residual connections. It sets a new state-of-the-art on pMNIST, achieving 98.45% accuracy, despite its trivially simple design.
+A recurrent neural network with residual connections. It sets a new state-of-the-art on pMNIST, achieving 98.45% accuracy.
 
 ## Testing The 4000-dimensional pMNIST Model
 
