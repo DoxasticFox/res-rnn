@@ -27,88 +27,184 @@ def _broadcast_but_last(x, y):
     else:
         return new, y
 
-class ShiftRight(torch.nn.Module):
-    def __init__(self):
-        super(ShiftRight, self).__init__()
 
-    def forward(self, s, x, output_width=None):
-        output_width = output_width or x.size(-1)
-        assert(output_width <= s.size(-1) + x.size(-1))
-        assert(output_width >= s.size(-1))
+class ResAbs(torch.nn.Module):
+    def __init__(self, out_features):
+        super(ResAbs, self).__init__()
 
-        excess_width = s.size(-1) + x.size(-1) - output_width
-        if excess_width > 0:
-            x = x[..., :-excess_width]
-        elif excess_width == 0:
-            x = x
-        else:
-            raise RuntimeError('excess_width should not be negative')
+        self.bendiness = torch.nn.Parameter(torch.zeros(out_features))
 
-        s, x = _broadcast_but_last(s, x)
-
-        if s.size(-1) > 0:
-            x = torch.cat((s, x), dim=-1)
-
-        return x
-
-class Res(torch.nn.Module):
-    def __init__(self, width, linearity):
-        super(Res, self).__init__()
-
-        self.linearity = linearity
-
-        self.fc1 = torch.nn.Linear(width, width)
-        self.fc2 = torch.nn.Linear(width, width)
-
-        torch.nn.init.xavier_uniform_(self.fc1.weight)
-        torch.nn.init.kaiming_uniform_(self.fc2.weight)
-
-        torch.nn.init.zeros_(self.fc1.bias)
-        torch.nn.init.zeros_(self.fc2.bias)
+        self.out_features = out_features
 
     def forward(self, x):
-        r = x
+        return x + self.bendiness * x.abs()
 
-        x = self.fc1(x)
-        x = x.clamp(min=0)
-        x = self.fc2(x)
 
-        x = self.linearity * r + (1 - self.linearity) * x
+class ResSin(torch.nn.Module):
+    def __init__(self, out_features):
+        super(ResSin, self).__init__()
 
-        return x
+        self.bendiness = torch.nn.Parameter(torch.zeros(out_features))
+
+        tau = (torch.acos(torch.tensor(0.0)) * 4.0).item()
+        w_min = - 2.0 * tau
+        w_max =   2.0 * tau
+
+        self.register_buffer(
+            'inner_weight',
+            ResSin._range_non_zero(out_features, w_min, w_max),
+        )
+        self.register_buffer(
+            'outer_weight',
+            ResSin._range_two(
+                (out_features,),
+                -1, -w_max, w_max, 1
+            ) / self.inner_weight,
+        )
+
+        self.out_features = out_features
+
+    def forward(self, x):
+        bendy_bit = \
+            self.bendiness * \
+            self.outer_weight * \
+            (x * self.inner_weight).sin()
+
+        return x + bendy_bit
+
+    @staticmethod
+    def _range(num, lo, hi):
+        assert(num >= 2)
+        return torch.arange(num) / float(num - 1) * (hi - lo) + lo
+
+    @staticmethod
+    def _bisect(nums):
+        if len(nums) == 1:
+            l_num = nums[0] // 2
+            r_num = nums[0] - l_num
+            return l_num, r_num
+        elif len(nums) == 2:
+            return nums
+        else:
+            ValueError('Too many nums')
+
+    @staticmethod
+    def _range_two(nums, l_lo, l_hi, r_lo, r_hi):
+        l_num, r_num = ResSin._bisect(nums)
+
+        return torch.cat((
+            ResSin._range(l_num, l_lo, l_hi),
+            ResSin._range(r_num, r_lo, r_hi),
+        ))
+
+    @staticmethod
+    def _range_non_zero(num, lo, hi):
+        l_num, r_num = ResSin._bisect((num,))
+
+        l_lo = lo
+        l_hi = -1.0 / l_num
+        r_lo =  1.0 / r_num
+        r_hi = hi
+
+        return ResSin._range_two((l_num, r_num), l_lo, l_hi, r_lo, r_hi)
+
+
+class ResLinear(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super(ResLinear, self).__init__()
+
+        self.in_features = in_features
+        self.out_features = out_features
+
+        self.weight = torch.nn.Parameter(
+            ResLinear._initial_weight(in_features, out_features)
+        )
+
+        self.bias = torch.nn.Parameter(
+            torch.zeros(out_features)
+        )
+
+    @staticmethod
+    @torch.no_grad()
+    def _initial_weight(in_features, out_features):
+        permuted_out = torch.randperm(out_features)
+
+        weight = torch.zeros(out_features, in_features)
+        for i in range(min(out_features, in_features)):
+            weight[i, i] = 1.0
+        weight = weight[permuted_out, :]
+        weight = weight * torch.sign(torch.randn_like(weight))
+
+        return weight
+
+    def forward(self, x):
+        return torch.addmm(self.bias, x, self.weight.t())
+
+
+class Add(torch.nn.Module):
+    def __init__(self, width_large, width_small):
+        super(Add, self).__init__()
+
+        self.width_large = width_large
+        self.width_small = width_small
+
+        self.padding = None
+
+    def forward(self, large, small):
+        assert(large.size(-1) == self.width_large)
+        assert(small.size(-1) == self.width_small)
+
+        if self.padding is None:
+            self.padding = torch.zeros(
+                self.width_large - self.width_small,
+                device=small.device
+            )
+        small, self.padding = _broadcast_but_last(small, self.padding)
+        small = torch.cat((small, self.padding), dim=-1)
+        return large + small
+
+
+class Res(torch.nn.Module):
+    def __init__(self, width):
+        super(Res, self).__init__()
+
+        self.fc1 = ResLinear(width, width)
+        self.act = ResSin(width)
+        self.fc2 = ResLinear(width, width)
+
+    def forward(self, x):
+        return self.fc2(self.act(self.fc1(x)))
+
 
 class ResRnn(torch.nn.Module):
     def __init__(
         self,
         input_width,
-        state_width,
+        stream_width,
         output_width,
-        linearity=0.99999,
         checkpoint_name='ResRnn',
     ):
         super(ResRnn, self).__init__()
 
         self.input_width = input_width
-        self.state_width = state_width
+        self.stream_width = stream_width
         self.output_width = output_width
-        self.stream_width = input_width + state_width
-        self.linearity = linearity
         self.checkpoint_name = checkpoint_name
 
-        assert(self.output_width <= self.stream_width)
         assert(self.input_width >= 0)
-        assert(self.state_width >= 0)
+        assert(self.stream_width >= 0)
+        assert(self.output_width >= 0)
 
         # Variables for coordinating checkpointing
         self.checkpoint_dir = None
         self.num_checkpoints = 0
 
-        self.initial_state = torch.nn.Parameter(
-            torch.zeros(size=(self.state_width,)),
+        self.initial_stream = torch.nn.Parameter(
+            torch.zeros(self.stream_width),
         )
 
-        self.ins = ShiftRight()
-        self.res = Res(self.stream_width, self.linearity)
+        self.ins = Add(self.stream_width, self.input_width)
+        self.res = Res(self.stream_width)
 
     def _get_seq_to_batch_index_map(self, seq_indices, seq_width, batch_width):
         if type(seq_indices) is int:
@@ -142,41 +238,41 @@ class ResRnn(torch.nn.Module):
 
         return seq_index_to_batch_indices
 
-    def forward(self, input, state=None, seq_indices=-1):
+    def forward(self, input, stream=None, seq_indices=-1):
         # input:
         #     (seq_width, batch_width, input_width) or
-        # state:
-        #     (batch_width, state_width) or
-        #     (state_width)
+        # stream:
+        #     (batch_width, stream_width) or
+        #     (stream_width)
         # seq_indices:
         #     int or
         #     [int]
         # returns:
         #     (seq_width, batch_width, output_width) and
-        #     (seq_width, batch_width, state_width) or
+        #     (seq_width, batch_width, stream_width) or
         #     (           batch_width, output_width) and
-        #     (           batch_width, state_width) or
+        #     (           batch_width, stream_width) or
 
         # Validate inputs
         input_seq_width, input_batch_width, input_width = input.size()
 
-        state_batch_width, state_width = None, None
-        if state is not None:
+        stream_batch_width, stream_width = None, None
+        if stream is not None:
             try:
-                state_width = state.size()
+                (stream_width,) = stream.size()
             except ValueError:
                 pass
 
             try:
-                state_batch_width, state_width = state.size()
+                stream_batch_width, stream_width = stream.size()
             except ValueError:
                 pass
 
         assert(input_width == self.input_width)
-        assert(state is None or state_width == self.state_width)
+        assert(stream is None or stream_width == self.stream_width)
         assert(
-            state_batch_width is None or
-            state_batch_width == input_batch_width)
+            stream_batch_width is None or
+            stream_batch_width == input_batch_width)
         assert(input_batch_width > 0)
 
         # Pre-process seq_indices
@@ -185,12 +281,6 @@ class ResRnn(torch.nn.Module):
             input_seq_width,
             input_batch_width
         )
-
-        # Set initial stream
-        if state is None:
-            stream = (1 - self.linearity) * self.initial_state
-        else:
-            stream = state
 
         # Used to collect return values
         streams = (
@@ -205,9 +295,13 @@ class ResRnn(torch.nn.Module):
                 for batch_index in seq_index_to_batch_indices[seq_index]:
                     streams[batch_index] = stream[batch_index]
 
+        # Set initial stream
+        if stream is None:
+            stream = self.initial_stream
+
         # Apply RNN
         for seq_index, element in enumerate(input):
-            stream = self.ins(element, stream, self.stream_width)
+            stream = self.ins(stream, element)
             stream = self.res(stream)
 
             append_to_streams(stream)
@@ -226,14 +320,10 @@ class ResRnn(torch.nn.Module):
         # easier. We slice it in a verbose way to allow for zero-length slices.
         outputs = streams[
             ...,
-            self.stream_width - self.output_width:self.stream_width
-        ]
-        states  = streams[
-            ...,
-            :self.state_width
+            :self.output_width
         ]
 
-        return outputs, states
+        return outputs, streams
 
     def _set_checkpoint_dir_if_none(self, file_name):
         def candidate_paths(path_name):
