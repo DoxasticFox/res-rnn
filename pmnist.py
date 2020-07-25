@@ -11,7 +11,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Define Hyper-parameters
 input_size = 784
-state_size = 1000
+state_size = 200
 output_size = 10
 num_epochs = 10000
 train_batch_size = 100
@@ -42,6 +42,7 @@ model = nnmodules.ResRnn(
     input_width=1,
     stream_width=state_size,
     output_width=output_size,
+    linearity=0.99999,
 ).to(device)
 
 # Loss and optimizer
@@ -52,9 +53,12 @@ def loss_fn(outputs, labels):
 
 optimizer = torch.optim.SGD(
     model.parameters(),
-    lr=1e-4,
+    lr=1e+4,
     momentum=0.9,
 )
+
+torch.manual_seed(0)
+random_indices = torch.randperm(28 * 28)
 
 # Train the model
 total_step = len(train_loader)
@@ -62,6 +66,8 @@ step_num = 0
 
 for epoch in range(num_epochs):
     for i, (images, labels) in enumerate(train_loader):
+        images = images.reshape(images.size(0), 28 * 28)
+        images = images[:, random_indices]
         images = images.reshape(images.size(0), 28 * 28, 1)
         images = images.permute(1, 0, 2)
         images = images.to(device)
@@ -69,13 +75,13 @@ for epoch in range(num_epochs):
         labels = labels.to(device)
 
         # Forward pass
-        outputs, state = model(images)
+        outputs, _ = model(images)
         total_loss = loss_fn(outputs, labels)
 
         # Backprpagation and optimization
         optimizer.zero_grad()
         total_loss.backward()
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), 1e-1)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.0001)
         optimizer.step()
         step_num += 1
 
@@ -100,6 +106,8 @@ for epoch in range(num_epochs):
                 correct = 0
                 total = 0
                 for images_, labels_ in test_loader:
+                    images_ = images_.reshape(images_.size(0), 28 * 28)
+                    images_ = images_[:, random_indices]
                     images_ = images_.reshape(images_.size(0), 28 * 28, 1)
                     images_ = images_.permute(1, 0, 2)
                     images_ = images_.to(device)

@@ -27,119 +27,46 @@ def _broadcast_but_last(x, y):
     else:
         return new, y
 
+class Res(torch.nn.Module):
+    def __init__(self, width, linearity):
+        super(Res, self).__init__()
 
-class ResAbs(torch.nn.Module):
-    def __init__(self, out_features):
-        super(ResAbs, self).__init__()
+        assert(width > 0)
+        assert(0.0 <= linearity < 1.0)
 
-        self.bendiness = torch.nn.Parameter(torch.zeros(out_features))
+        self.linearity = linearity
 
-        self.out_features = out_features
+        self.randperm = torch.nn.Parameter(
+            torch.randperm(width),
+            requires_grad=False,
+        )
+        self.randsign = torch.nn.Parameter(
+            torch.sign(
+                torch.arange(width).remainder(2) - 0.5
+            )[torch.randperm(width)],
+            requires_grad=False,
+        )
+        self.fc1 = torch.nn.Linear(width, width)
+        self.fc2 = torch.nn.Linear(width, width)
+
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        torch.nn.init.kaiming_uniform_(self.fc2.weight)
+
+        torch.nn.init.zeros_(self.fc1.bias)
+        torch.nn.init.zeros_(self.fc2.bias)
 
     def forward(self, x):
-        return x + self.bendiness * x.abs()
+        x = x[:, self.randperm] * self.randsign
 
+        r = x
 
-class ResSin(torch.nn.Module):
-    def __init__(self, out_features):
-        super(ResSin, self).__init__()
+        x = self.fc1(x)
+        x = x.clamp(min=0)
+        x = self.fc2(x)
 
-        self.bendiness = torch.nn.Parameter(torch.zeros(out_features))
+        x = self.linearity * r + (1 - self.linearity) * x
 
-        tau = (torch.acos(torch.tensor(0.0)) * 4.0).item()
-        w_min = - 2.0 * tau
-        w_max =   2.0 * tau
-
-        self.register_buffer(
-            'inner_weight',
-            ResSin._range_non_zero(out_features, w_min, w_max),
-        )
-        self.register_buffer(
-            'outer_weight',
-            ResSin._range_two(
-                (out_features,),
-                -1, -w_max, w_max, 1
-            ) / self.inner_weight,
-        )
-
-        self.out_features = out_features
-
-    def forward(self, x):
-        bendy_bit = \
-            self.bendiness * \
-            self.outer_weight * \
-            (x * self.inner_weight).sin()
-
-        return x + bendy_bit
-
-    @staticmethod
-    def _range(num, lo, hi):
-        assert(num >= 2)
-        return torch.arange(num) / float(num - 1) * (hi - lo) + lo
-
-    @staticmethod
-    def _bisect(nums):
-        if len(nums) == 1:
-            l_num = nums[0] // 2
-            r_num = nums[0] - l_num
-            return l_num, r_num
-        elif len(nums) == 2:
-            return nums
-        else:
-            ValueError('Too many nums')
-
-    @staticmethod
-    def _range_two(nums, l_lo, l_hi, r_lo, r_hi):
-        l_num, r_num = ResSin._bisect(nums)
-
-        return torch.cat((
-            ResSin._range(l_num, l_lo, l_hi),
-            ResSin._range(r_num, r_lo, r_hi),
-        ))
-
-    @staticmethod
-    def _range_non_zero(num, lo, hi):
-        l_num, r_num = ResSin._bisect((num,))
-
-        l_lo = lo
-        l_hi = -1.0 / l_num
-        r_lo =  1.0 / r_num
-        r_hi = hi
-
-        return ResSin._range_two((l_num, r_num), l_lo, l_hi, r_lo, r_hi)
-
-
-class ResLinear(torch.nn.Module):
-    def __init__(self, in_features, out_features):
-        super(ResLinear, self).__init__()
-
-        self.in_features = in_features
-        self.out_features = out_features
-
-        self.weight = torch.nn.Parameter(
-            ResLinear._initial_weight(in_features, out_features)
-        )
-
-        self.bias = torch.nn.Parameter(
-            torch.zeros(out_features)
-        )
-
-    @staticmethod
-    @torch.no_grad()
-    def _initial_weight(in_features, out_features):
-        permuted_out = torch.randperm(out_features)
-
-        weight = torch.zeros(out_features, in_features)
-        for i in range(min(out_features, in_features)):
-            weight[i, i] = 1.0
-        weight = weight[permuted_out, :]
-        weight = weight * torch.sign(torch.randn_like(weight))
-
-        return weight
-
-    def forward(self, x):
-        return torch.addmm(self.bias, x, self.weight.t())
-
+        return x
 
 class Add(torch.nn.Module):
     def __init__(self, width_large, width_small):
@@ -163,25 +90,13 @@ class Add(torch.nn.Module):
         small = torch.cat((small, self.padding), dim=-1)
         return large + small
 
-
-class Res(torch.nn.Module):
-    def __init__(self, width):
-        super(Res, self).__init__()
-
-        self.fc1 = ResLinear(width, width)
-        self.act = ResSin(width)
-        self.fc2 = ResLinear(width, width)
-
-    def forward(self, x):
-        return self.fc2(self.act(self.fc1(x)))
-
-
 class ResRnn(torch.nn.Module):
     def __init__(
         self,
         input_width,
         stream_width,
         output_width,
+        linearity=0.99999,
         checkpoint_name='ResRnn',
     ):
         super(ResRnn, self).__init__()
@@ -189,8 +104,11 @@ class ResRnn(torch.nn.Module):
         self.input_width = input_width
         self.stream_width = stream_width
         self.output_width = output_width
+        self.linearity = linearity
         self.checkpoint_name = checkpoint_name
 
+        assert(self.input_width <= self.stream_width)
+        assert(self.output_width <= self.stream_width)
         assert(self.input_width >= 0)
         assert(self.stream_width >= 0)
         assert(self.output_width >= 0)
@@ -204,7 +122,7 @@ class ResRnn(torch.nn.Module):
         )
 
         self.ins = Add(self.stream_width, self.input_width)
-        self.res = Res(self.stream_width)
+        self.res = Res(self.stream_width, self.linearity)
 
     def _get_seq_to_batch_index_map(self, seq_indices, seq_width, batch_width):
         if type(seq_indices) is int:
@@ -297,7 +215,7 @@ class ResRnn(torch.nn.Module):
 
         # Set initial stream
         if stream is None:
-            stream = self.initial_stream
+            stream = (1 - self.linearity) * self.initial_stream
 
         # Apply RNN
         for seq_index, element in enumerate(input):
