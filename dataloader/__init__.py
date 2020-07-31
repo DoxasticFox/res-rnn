@@ -4,33 +4,26 @@ import torch
 
 padding_byte = b'\x00'
 
-def bytes_2_float_lists(bytes):
-    bit_strings = ['{0:0>8b}'.format(b) for b in bytes]
-    return [bit_string_2_float_list(bs) for bs in bit_strings]
+def strings_2_tensor(strings, device=None):
+    strings = [s.encode('utf-8') if type(s) == str else s for s in strings]
+    longs = torch.LongTensor(strings)
+    if device is not None:
+        longs = longs.to(device)
+    one_hots = torch.nn.functional.one_hot(longs, num_classes=256)
+    one_hots = one_hots.float()
+    return one_hots.permute(1, 0, 2)
 
-def bit_string_2_float_list(bit_string):
-    return [float(b) for b in bit_string]
-
-def float_lists_2_string(fl, null_terminate):
-    rounded      = [[round(x) for x in xs] for xs in fl]
-    strings      = [[str(x)   for x in xs] for xs in rounded]
-    joined       = [''.join(xs)            for xs in strings]
-    ints         = [int(x, 2)              for x  in joined]
-    bytes        = [x.to_bytes(1, 'big')   for x  in ints]
-    joined_bytes = b''.join(bytes)
-    s            = joined_bytes.decode('utf-8', errors='ignore')
-    s            = (
-        s.split(padding_byte.decode('utf-8'))[0]
+def tensor_2_strings(t, null_terminate=True):
+    t = t.permute(1, 0, 2)
+    _, indices = t.max(2)
+    indices = indices.tolist()
+    bytearrays = map(bytearray, indices)
+    bytearrays = (
+        [ba.split(padding_byte)[0] for ba in bytearrays]
         if null_terminate
-        else s
+        else bytearrays
     )
-    return s
-
-def tensor_2_string(t, null_terminate=True):
-    t = t.clamp(min=0, max=1)
-    t = t.tolist()
-    t = [[float(x) for x in xs] for xs in t]
-    return float_lists_2_string(t, null_terminate)
+    return [ba.decode('utf-8', errors='ignore') for ba in bytearrays]
 
 def pad_bytes(s, target_len):
     if len(s) > target_len:
@@ -126,34 +119,37 @@ class PairLengthGroups:
 class Batch:
     def __init__(
             self,
-            src_lang,
-            srcs,
-            rsrcs,
-            src_lens,
-            tgt_lang,
-            tgts,
-            rtgts,
-            tgt_lens
+            pairs,
+            device=None,
     ):
-        self.src_lang = src_lang
-        self.srcs     = srcs
-        self.rsrcs    = rsrcs
-        self.src_lens = src_lens
-        self.tgt_lang = tgt_lang
-        self.tgts     = tgts
-        self.rtgts    = rtgts
-        self.tgt_lens = tgt_lens
+        self.pairs = pairs
+        self.device = device
 
-    def to(self, device):
-        self.src_lang = self.src_lang.to(device)
-        self.srcs     = self.srcs    .to(device)
-        self.rsrcs    = self.rsrcs   .to(device)
-        self.src_lens = self.src_lens.to(device)
-        self.tgt_lang = self.tgt_lang.to(device)
-        self.tgts     = self.tgts    .to(device)
-        self.rtgts    = self.rtgts   .to(device)
-        self.tgt_lens = self.tgt_lens.to(device)
-        return self
+        srcs, tgts = zip(*pairs)
+
+        # Package batch
+        src_lens = [len(s) + 1 for s in srcs]
+        tgt_lens = [len(t) + 1 for t in tgts]
+
+        max_src_len = max(src_lens)
+        max_tgt_len = max(tgt_lens)
+
+        self.srcs = self._pad_and_convert_to_tensor(srcs, max_src_len)
+        self.tgts = self._pad_and_convert_to_tensor(tgts, max_tgt_len)
+
+        self.src_lens = torch.tensor(src_lens, device=device)
+        self.tgt_lens = torch.tensor(tgt_lens, device=device)
+
+    def _pad_and_convert_to_tensor(self, seq, _len=None):
+        if _len:
+            seq = [pad_bytes(s, _len) for s in seq]
+        return strings_2_tensor(seq, self.device)
+
+    def map(self, fun):
+        return Batch(
+            [p.map(fun) for p in self.pairs],
+            device=self.device
+        )
 
 class BatchGenerator:
     def __init__(
@@ -166,7 +162,6 @@ class BatchGenerator:
         src_lang=None,
         tgt_lang=None,
         device=None,
-        num_workers=16,
     ):
         self.batch_size = batch_size
         self.similar_lengths = similar_lengths
@@ -197,23 +192,6 @@ class BatchGenerator:
 
         self.corpus_data = corpus_data
 
-        # Asynchronously maintain a queue to reduce how long self.__iter__ calls
-        # take.
-        self.iter_queue = multiprocessing.Queue(maxsize=10 * num_workers)
-        self.iter_queue_procs = []
-        for _ in range(num_workers):
-            self.iter_queue_procs.append(
-                multiprocessing.Process(
-                    target=self._fill_iter_queue,
-                    daemon=True,
-                )
-            )
-            self.iter_queue_procs[-1].start()
-
-    def __del__(self):
-        for iter_queue_proc in self.iter_queue_procs:
-            iter_queue_proc.terminate()
-
     def _choose_random_len_group(self):
         rand_pair_index = random.randint(0, len(self.corpus_data.pairs) - 1)
         rand_group_index = len(self.corpus_data.pairs[rand_pair_index])
@@ -228,52 +206,9 @@ class BatchGenerator:
         batch_size = min(self.batch_size, len(population))
         return random.choices(population=population, k=batch_size)
 
-    def _pad_and_convert_to_float(self, seq, _len=None):
-        if _len:
-            seq = [pad_bytes(s, _len) for s in seq]
-        seq = [bytes_2_float_lists(s) for s in seq]
-        return seq
-
-    def _fill_iter_queue(self):
-        while True:
-            srcs, tgts = zip(*self._choose_random_batch_of_pairs())
-
-            rsrcs = [s[::-1] for s in srcs]
-            rtgts = [s[::-1] for s in tgts]
-
-            # Generate src_lang and tgt_lang
-            src_lang = [self.src_lang.encode()] * len(srcs)
-            tgt_lang = [self.tgt_lang.encode()] * len(tgts)
-
-            src_lang = self._pad_and_convert_to_float(src_lang)
-            tgt_lang = self._pad_and_convert_to_float(tgt_lang)
-
-            # Package batch
-            src_lens = [len(s) + 1 for s in srcs]
-            tgt_lens = [len(t) + 1 for t in tgts]
-
-            max_src_len = max(src_lens)
-            max_tgt_len = max(tgt_lens)
-
-            srcs = self._pad_and_convert_to_float(srcs, max_src_len)
-            tgts = self._pad_and_convert_to_float(tgts, max_tgt_len)
-
-            rsrcs = self._pad_and_convert_to_float(rsrcs, max_src_len)
-            rtgts = self._pad_and_convert_to_float(rtgts, max_tgt_len)
-
-            batch = Batch(
-                torch.tensor(src_lang).permute(1, 0, 2),
-                torch.tensor(srcs).permute(1, 0, 2),
-                torch.tensor(rsrcs).permute(1, 0, 2),
-                torch.tensor(src_lens),
-                torch.tensor(tgt_lang).permute(1, 0, 2),
-                torch.tensor(tgts).permute(1, 0, 2),
-                torch.tensor(rtgts).permute(1, 0, 2),
-                torch.tensor(tgt_lens),
-            )
-
-            self.iter_queue.put(batch)
-
     def __iter__(self):
         while True:
-            yield self.iter_queue.get().to(self.device)
+            yield Batch(
+                self._choose_random_batch_of_pairs(),
+                device=self.device
+            )
