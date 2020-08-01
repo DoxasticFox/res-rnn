@@ -13,14 +13,14 @@ batch_size = 16
 
 enc = nnmodules.ResRnn(
     input_width=256,
-    stream_width=8192,
+    stream_width=512,
     output_width=0,
     checkpoint_name='enc'
 ).to(device)
 
 dec = nnmodules.ResRnn(
     input_width=0,
-    stream_width=8192,
+    stream_width=512,
     output_width=256,
     checkpoint_name='dec'
 ).to(device)
@@ -46,10 +46,13 @@ def random_word_delete(bytes_):
     )
 
 def random_byte_delete(bytes_):
-    return bytearray(
+    return bytes(
         b if random.random() < 0.8 else b'_'[0]
         for b in bytes_
     )
+
+def reversed_bytes(bytes_):
+    return bytes(reversed(bytes_))
 
 def model_wrapper(b, c):
     empty_tgts = torch.zeros((b.tgts.size(0), b.tgts.size(1), 0)).to(device)
@@ -63,14 +66,14 @@ def model_wrapper(b, c):
     tgt_mask = (tgt_indices < tgt_lens_tiled).float()
 
     # Run forward pass
-    _, stream_t = enc(c.tgts, seq_indices=b.tgt_lens - 1)
+    _, stream_t = enc(b.tgts, seq_indices=b.tgt_lens - 1)
     unmasked_output_t_t, _ = dec(empty_tgts, stream=stream_t, seq_indices=None)
 
     masked_output_t_t = unmasked_output_t_t * tgt_mask
 
     batch_loss = torch.nn.functional.smooth_l1_loss(
         masked_output_t_t,
-        b.tgts,
+        c.tgts,
     )
 
     return (
@@ -84,7 +87,7 @@ batch_gen_args = dict(
     batch_size=batch_size,
     similar_lengths=True,
     min_line_len=2,
-    max_line_len=50,
+    max_line_len=350,
     device=device,
 )
 batches = iter(dataloader.BatchGenerator(**batch_gen_args))
@@ -94,7 +97,7 @@ ema_batch_loss = None
 
 for i in itertools.count():
     b = next(batches)
-    c = b.map(random_byte_delete)
+    b, c = b.map(reversed_bytes), b
 
     if i % 10 == 0:
         with torch.no_grad():
@@ -126,11 +129,7 @@ for i in itertools.count():
 
         print(
             'Input (tgts):',
-            dataloader.tensor_2_strings(b.tgts[:, 0:1, :])[0],
-        )
-        print(
-            'Input (tgts):',
-            dataloader.tensor_2_strings(c.tgts[:, 0:1, :])[0],
+            dataloader.tensor_2_strings(b.tgts[:, 0:1, :])[0][::-1],
         )
         print(
             'Output (t_t):',

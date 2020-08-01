@@ -141,7 +141,7 @@ class Batch:
         self.tgt_lens = torch.tensor(tgt_lens, device=device)
 
     def _pad_and_convert_to_tensor(self, seq, _len=None):
-        if _len:
+        if _len is not None:
             seq = [pad_bytes(s, _len) for s in seq]
         return strings_2_tensor(seq, self.device)
 
