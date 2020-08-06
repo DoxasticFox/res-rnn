@@ -218,93 +218,34 @@ class ResRnn(torch.nn.Module):
         self.load_state_dict(torch.load(file_name))
         self.eval()
 
-class BinaryTreeResRnn(torch.nn.Module):
+class ResEmbedding(torch.nn.Module):
     def __init__(
         self,
-        input_width,
-        stream_width,
-        output_width,
+        num_embeddings,
+        dim_embeddings,
         linearity=0.99999,
-        checkpoint_name='ResRnn',
+        checkpoint_name='Embedding',
     ):
-        super(BinaryTreeResRnn, self).__init__()
-
-        self.input_width = input_width
-        self.stream_width = stream_width
-        self.output_width = output_width
+        super(ResEmbedding, self).__init__()
+        self.num_embeddings = num_embeddings
+        self.dim_embeddings = dim_embeddings
         self.linearity = linearity
         self.checkpoint_name = checkpoint_name
-
-        assert(self.input_width <= self.stream_width)
-        assert(self.output_width <= self.stream_width)
-        assert(self.input_width >= 0)
-        assert(self.stream_width >= 0)
-        assert(self.output_width >= 0)
 
         # Variables for coordinating checkpointing
         self.checkpoint_dir = None
         self.num_checkpoints = 0
 
-        self.encl = Res(self.stream_width, self.linearity)
-        self.encr = Res(self.stream_width, self.linearity)
-
-        self.decl = Res(self.stream_width, self.linearity)
-        self.decr = Res(self.stream_width, self.linearity)
-
-    def _pad_to_stream_width(self, x):
-        x_seq_width, x_batch_width, x_element_width = x.size()
-
-        if x_element_width == self.stream_width:
-            return x
-
-        stream_width_padding = torch.zeros(
-            (
-                x_seq_width,
-                x_batch_width,
-                self.stream_width - x_element_width,
-            ),
-            device=x.device,
+        self.weight = torch.nn.Parameter(
+            torch.empty(dim_embeddings, num_embeddings),
         )
-        return torch.cat((x, stream_width_padding), dim=2)
+        torch.nn.init.orthogonal_(self.weight)
 
-    def _pad_to_even_seq_width(self, x):
-        x_seq_width, x_batch_width, x_element_width = x.size()
-
-        if x_seq_width % 2 == 0:
-            return x
-
-        seq_width_padding = torch.zeros(
-            (1, x_batch_width, x_element_width),
-            device=x.device,
-        )
-        return torch.cat((x, seq_width_padding), dim=0)
-
-    def encode(self, x):
-        x_seq_width, x_batch_width, x_element_width = x.size()
-
-        if (x_seq_width, x_element_width) == (1, self.stream_width):
-            return x
-
-        x = self._pad_to_stream_width(x)
-        x = self._pad_to_even_seq_width(x)
-
-        l = self.encl(x[0::2])
-        r = self.encr(x[1::2])
-
-        return self.encode(l + r)
-
-    def decode(self, x, num_steps):
-        if num_steps < 0:
-            raise ValueError('num_steps must be non-negative')
-        if num_steps == 0:
-            return x[..., :self.output_width]
-
-        l = self.decl(x)
-        r = self.decr(x)
-
-        i = torch.stack([l, r], dim=1).flatten(start_dim=0, end_dim=1)
-
-        return self.decode(i, num_steps - 1)
+    def forward(self, x):
+        assert(x.size(-1) == self.num_embeddings)
+        return \
+            x * self.linearity + \
+            x.matmul(self.weight.t()) * (1 - self.linearity)
 
     def _set_checkpoint_dir_if_none(self, file_name):
         def candidate_paths(path_name):
